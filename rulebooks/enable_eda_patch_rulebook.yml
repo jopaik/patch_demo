@@ -1,0 +1,15 @@
+---
+- name: Scheduled Delayed Execution
+  hosts: all
+  sources:
+    - ansible.eda.tick:
+        seconds: 5  # The source will pulse every 5 seconds
+        limit: 1    # We only want the FIRST pulse to trigger the rule
+
+  rules:
+    - name: Trigger Patching after first tick
+      condition: event.i == 0  # Matches the very first event generated
+      actions:
+        - run_job_template:
+            name: "Patch_Workflow"
+            organization: "Default"
