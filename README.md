@@ -9,3 +9,8 @@ The demo covers the following four phases:
 2.  **Patch**: Executing the update for the specified vulnerabilities.
 3.  **Rollback**: Demonstrating the ability to revert changes if issues arise.
 4.  **Post-Check**: Verifying successful installation and system health.
+
+### EDA Workflow activation 
+
+Rulebook will launch Patch_Workflow within 5secs of actions
+Time of 5 secs will be used here as the event trigger
