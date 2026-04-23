@@ -1,0 +1,30 @@
+---
+- name: Targeted Windows Security Patching
+  hosts: windows
+  vars:
+    # Define the KB number here (no "KB" prefix needed for the search string, usually)
+    target_kb_id: "{{ default('KB4052623') }}"
+
+  tasks:
+    - name: Search and Install specific update
+      ansible.windows.win_updates:
+        category_names:
+          - DefinitionUpdates
+          - SecurityUpdates
+          - CriticalUpdates
+        whitelist: 
+          - "*{{ target_kb_id }}*"
+        state: installed
+      register: kb_patch_result
+
+    - name: Audit Output
+      ansible.builtin.debug:
+        msg: 
+          - "Target KB: {{ target_kb_id }}"
+          - "Found matching updates: {{ kb_patch_result.found_update_count }}"
+          - "Installed successfully: {{ kb_patch_result.installed_update_count }}"
+          - "Reboot Required: {{ kb_patch_result.reboot_required }}"
+
+    - name: Conditional Reboot
+      ansible.windows.win_reboot:
+      when: kb_patch_result.reboot_required

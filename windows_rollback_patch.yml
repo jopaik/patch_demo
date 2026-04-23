@@ -1,0 +1,22 @@
+---
+- name: Uninstall Specific Windows KB
+  hosts: windows
+  vars:
+    target_kb_id: "{{ default('KB4052623') }}"
+
+  tasks:
+    - name: Check if KB is installed
+      ansible.windows.win_shell: "Get-HotFix -Id {{ target_kb_id }}"
+      register: kb_check
+      failed_when: false
+      changed_when: false
+
+    - name: Uninstall the KB using WUSA
+      ansible.windows.win_shell: "wusa.exe /uninstall /kb:{{ target_kb_id.replace('KB','') }} /quiet /norestart"
+      when: kb_check.rc == 0
+      register: uninstall_result
+
+    - name: Reboot if required after uninstall
+      ansible.windows.win_reboot:
+      # WUSA won't always report 'changed', so we check if the command executed
+      when: uninstall_result.rc == 0

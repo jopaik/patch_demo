@@ -1,0 +1,23 @@
+---
+- name: Rollback RHEL Advisory
+  hosts: rhel_servers
+  become: true
+  vars:
+    cve_advisory_id: "{{ default('RHSA-2024:1690') }}"
+
+  tasks:
+    - name: Find the transaction ID for the advisory
+      # This finds the last transaction involving the advisory ID
+      shell: "dnf history list {{ cve_advisory_id }} | tail -n 2 | awk '{print $1}' | head -n 1"
+      register: dnf_trans_id
+      changed_when: false
+
+    - name: Undo the DNF transaction
+      shell: "dnf history undo {{ dnf_trans_id.stdout }} -y"
+      when: dnf_trans_id.stdout | length > 0
+      register: rollback_result
+
+    - name: Verify Rollback
+      debug:
+        msg: "Transaction {{ dnf_trans_id.stdout }} has been undone."
+      when: rollback_result.changed
