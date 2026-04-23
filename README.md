@@ -17,7 +17,7 @@ Rulebook will launch Patch_Workflow within 5secs of actions
 Time of 5 secs will be used here as the event trigger
 
 ### Patch_Workflow Diagram
-html_content = f"""
+
 
 <h2>Workflow Visualization</h2>
 <pre>
