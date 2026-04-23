@@ -75,29 +75,4 @@ html_content = f"""
 │ TASK 5: Compliance Update│
 └──────────────────────────┘
 
-<h2>Logic Table</h2>
-<table>
-    <tr><th>Task</th><th>Action</th><th>Description</th></tr>
-    <tr><td>Task 1</td><td>Backup Snapshot</td><td>Mandatory baseline for PCI-DSS disaster recovery.</td></tr>
-    <tr><td>Task 2</td><td>Pre_Patch_Check</td><td>Validates if patching is required.</td></tr>
-    <tr><td>Task 3a/b</td><td>OS Patching</td><td>Platform-specific installation logic.</td></tr>
-    <tr><td>Task 3c</td><td>Verify Patch</td><td>Checks exit codes to determine success or failure.</td></tr>
-    <tr><td>Rollback</td><td>OS Rollback</td><td>Native undo (DNF Undo / WUSA Uninstall).</td></tr>
-    <tr><td>Restore</td><td>Restore Snapshot</td><td>Final recovery via Hypervisor API.</td></tr>
-</table>
-
-<div class="note">
-    <strong>Compliance Alert:</strong> This workflow ensures "Availability" while pursuing "Confidentiality" via patching.
-</div>
-with open("Patch_Workflow_Summary.html", "w") as f:
-f.write(html_content)
-
-HTML(filename="Patch_Workflow_Summary.html").write_pdf("Patch_Workflow_Report.pdf")
-
-```python?code_reference&code_event_index=3
-# Defining the markdown content
-markdown_content = """# Patch_Workflow Orchestration Map
-
-This document outlines the cross-platform automation workflow for RHEL and Windows patching, ensuring high availability and PCI-DSS compliance through multi-layer recovery logic.
-
 ## Workflow Visualization
