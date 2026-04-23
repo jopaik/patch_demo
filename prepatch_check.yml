@@ -1,0 +1,47 @@
+---
+- name: Pre-Check Patch Applicability
+  hosts: rhel_servers, windows
+  gather_facts: yes
+
+  vars:
+    # Variables tailored to each OS type
+    cve_advisory_id: "{{ default('RHSA-2024:1690') }}"
+    target_kb_id: "{{ default('KB4052623') }}"
+
+  tasks:
+    # --- RHEL PRE-CHECK ---
+    - name: Check if RHEL Advisory is needed
+      when: ansible_os_family == "RedHat"
+      block:
+        - name: Query DNF for specific advisory
+          ansible.builtin.command: "dnf updateinfo list --advisory {{ cve_advisory_id }}"
+          register: rhel_check
+          changed_when: false
+
+        - name: Set RHEL status fact
+          ansible.builtin.set_fact:
+            patch_needed: "{{ cve_advisory_id in rhel_check.stdout }}"
+
+    # --- WINDOWS PRE-CHECK ---
+    - name: Check if Windows KB is installed
+      when: ansible_os_family == "Windows"
+      block:
+        - name: Query HotFix list for KB
+          ansible.windows.win_shell: |
+            Get-HotFix -Id {{ target_kb_id }}
+          register: win_check
+          failed_when: false
+          changed_when: false
+
+        - name: Set Windows status fact
+          ansible.builtin.set_fact:
+            # If rc is non-zero, the KB was NOT found (meaning it's needed)
+            patch_needed: "{{ win_check.rc != 0 }}"
+
+    # --- FINAL REPORT ---
+    - name: Summary of Pre-Check
+      ansible.builtin.debug:
+        msg: >
+          System: {{ inventory_hostname }} | 
+          Target ID: {{ cve_advisory_id if ansible_os_family == 'RedHat' else target_kb_id }} | 
+          Execution Recommended: {{ 'YES' if patch_needed else 'NO (System Compliant)' }}
