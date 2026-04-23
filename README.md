@@ -10,7 +10,68 @@ The demo covers the following four phases:
 3.  **Rollback**: Demonstrating the ability to revert changes if issues arise.
 4.  **Post-Check**: Verifying successful installation and system health.
 
+
 ### EDA Workflow activation 
 
 Rulebook will launch Patch_Workflow within 5secs of actions
 Time of 5 secs will be used here as the event trigger
+
+### Patch_Workflow Diagram
+
+[ START: Workflow Launched ]
+           │
+           ▼
+┌──────────────────────────┐
+│ TASK 1:                  │
+│ Take Backup Snapshot     │
+└──────────┬───────────────┘
+           │
+           ▼
+┌──────────────────────────┐
+│ TASK 2:                  │
+│ Run Pre_Patch_Check      │
+└──────────┬───────────────┘
+           │
+     ┌─────┴───────────┐
+     ▼                 ▼
+[ IF RHEL ]       [ IF WINDOWS ]
+     │                 │
+┌────┴──────────┐ ┌────┴──────────┐
+│ TASK 3a:      │ │ TASK 3b:      │
+│ RHEL_Patch    │ │ Windows_Patch │
+└────┬──────────┘ └────┬──────────┘
+     │                 │
+     └───────┬─────────┘
+             │
+             ▼
+┌──────────────────────────┐
+│ TASK 3c:                 │
+│ Run Verification Checks  │
+└──────────┬───────────────┘
+           │
+           ├── [ SUCCESS ] ──┐
+           │                 │
+     [ IF FAILED ]           │
+           │                 │
+     ┌─────┴───────────┐     │
+     ▼                 ▼     │
+┌───────────────┐ ┌──────────┴───────────────┐ 
+│ OS ROLLBACK   │ │ TASK 4:                  │
+│ (RHEL/Win)    │ │ System Reboot: if needed │
+└────┬──────────┘ └────┬─────────────────────┘
+     │                 │     ▲
+[ IF ROLLBACK FAIL ]   │     │
+     │                 │     │
+     ▼                 │     │
+┌───────────────────┐  │     │
+│ Restore Snapshot  │  │     │
+│ (Hypervisor)      │  │     │
+└─────────┬─────────┘  │     │
+          │            │     │
+          └────────────┼─────┘
+                       │
+                       ▼
+      ┌──────────────────────────────┐
+      │ TASK 5:                      │
+      │ Compliance Reporting Update  │
+      └──────────────────────────────┘
