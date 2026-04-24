@@ -1,10 +1,10 @@
 ---
 - name: Backup Snapshot and Validation
   hosts: jp_rhel, jp_windows
-  gather_facts: no
+  gather_facts: 
   vars:
     # Snapshot configuration
-
+    snapshot_time: "{{ now(fmt='%Y-%m-%d_%H-%M-%S') }}
     snapshot_description: "Automated backup before security patching activity"
 
   tasks:
@@ -22,4 +22,8 @@
     # 3. FINAL SUCCESS MESSAGE
     - name: Notify successful completion
       ansible.builtin.debug:
-        msg: "SUCCESS: Snapshot backup_{{ inventory_hostname }}_{{ now(fmt='%Y-%m-%d_%H-%M-%S') }} has been successfully completed."
+        msg: "SUCCESS: Snapshot backup_{{ inventory_hostname }}_{{ snapshot_time }} has been successfully completed."
+    
+    - name: Set fact cache for snapshot result
+      ansible.builtin.set_fact:
+        chached_snapshot_name: "backup_{{ inventory_hostname }}_{{ snapshot_time }}"
