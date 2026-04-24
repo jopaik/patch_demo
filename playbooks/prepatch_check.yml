@@ -1,6 +1,6 @@
 ---
 - name: Pre-Check Patch Applicability
-  hosts: rhel_servers, windows
+  hosts: jp_rhel, jp_windows
   gather_facts: yes
 
   vars:

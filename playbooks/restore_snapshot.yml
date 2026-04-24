@@ -1,6 +1,6 @@
 ---
 - name: Restore Automation Snapshot and Validation
-  hosts: rhel_servers, windows
+  hosts: jp_rhel, jp_windows
   gather_facts: no
   vars:
     # Snapshot configuration

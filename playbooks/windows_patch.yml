@@ -1,6 +1,6 @@
 ---
 - name: Targeted Windows Security Patching
-  hosts: windows
+  hosts: jp_windows
   vars:
     # Define the KB number here (no "KB" prefix needed for the search string, usually)
     target_kb_id: "{{ default('KB4052623') }}"

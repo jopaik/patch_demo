@@ -1,6 +1,6 @@
 ---
 - name: Phase 1 - Audit Specific CVE and KB Status
-  hosts: all
+  hosts: jp_rhel, jp_windows
   become: yes
   tasks:
     # --- RHEL AUDIT ---
@@ -32,7 +32,7 @@
         target_id: "KB4052623"
 
 - name: Phase 2 - Deploy Centralized Report Webserver
-  hosts: webserver
+  hosts: jp_webserver
   become: yes
   tasks:
     - name: Install Apache

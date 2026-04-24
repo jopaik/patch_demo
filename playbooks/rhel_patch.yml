@@ -1,6 +1,6 @@
 ---
 - name: Patch Specific RHEL CVE
-  hosts: rhel_servers
+  hosts: jp_rhel
   become: true
   vars:
     cve_advisory_id: "{{ default('RHSA-2024:1690') }}"
