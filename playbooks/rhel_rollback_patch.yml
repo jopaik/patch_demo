@@ -7,31 +7,30 @@
 
   tasks:
     - name: Find the DNF transaction ID for the advisory
+      # This looks for the ID in the first column where the advisory ID appears
       ansible.builtin.shell: >
-        dnf history list {{ cve_advisory_id }} | grep {{ cve_advisory_id }} | awk '{print $1}' | head -n 1
+        dnf history list {{ cve_advisory_id }} | grep -m 1 {{ cve_advisory_id }} | awk '{print $1}'
       register: dnf_history_id
       changed_when: false
-      failed_when: dnf_history_id.stdout == ""
+      failed_when: false
 
     - name: Undo the DNF transaction
       ansible.builtin.command:
         cmd: "dnf history undo {{ dnf_history_id.stdout }} -y"
       register: undo_result
-      when: dnf_history_id.stdout != ""
+      # Only run if stdout is a number; skip if it's empty or contains "No"
+      when: 
+        - dnf_history_id.stdout != ""
+        - dnf_history_id.stdout is regex('^[0-9]+$')
       
-    - name: Check if reboot is still required after rollback
+    - name: Report failure if transaction not found
+      ansible.builtin.debug:
+        msg: "Could not find a DNF transaction for advisory {{ cve_advisory_id }}. Nothing to rollback."
+      when: dnf_history_id.stdout == "" or dnf_history_id.stdout is not regex('^[0-9]+$')
+
+    - name: Check reboot status if rollback happened
       ansible.builtin.command: needs-restarting -r
       register: reboot_check
       failed_when: false
       changed_when: false
-
-    - name: Update reboot_required fact
-      ansible.builtin.set_fact:
-        reboot_required: "{{ true if reboot_check.rc != 0 else false }}"
-        cacheable: yes
-
-    - name: Report Rollback Status
-      ansible.builtin.debug:
-        msg: 
-          - "Rollback of {{ cve_advisory_id }} (Transaction {{ dnf_history_id.stdout }}) complete."
-          - "Reboot required: {{ reboot_required }}"
+      when: undo_result is skipped or undo_result is success
