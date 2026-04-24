@@ -3,8 +3,7 @@
   hosts: jp_rhel, jp_windows
   gather_facts: no
   vars:
-    # Snapshot configuration
-    snapshot_name: "Post_Patching_Restoration_{{ ansible_date_time.date }}"
+    # Snapshot configuration 
     snapshot_description: "Automated backup before security patching activity"
 
   tasks:
@@ -17,9 +16,8 @@
     - name: Pause for 5 seconds to allow storage commit
       ansible.builtin.pause:
         seconds: 5
-      when: snapshot_result.changed
-
+  
     # 3. FINAL SUCCESS MESSAGE
     - name: Notify successful completion
       ansible.builtin.debug:
-        msg: "SUCCESS: Snapshot Restoration '{{ snapshot_name }}' has been successfully completed for {{ inventory_hostname }}."
+        msg: "SUCCESS: Snapshot Restoration '{{ chached_snapshot_name }}' has been successfully completed for {{ inventory_hostname }}."
