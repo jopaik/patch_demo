@@ -22,4 +22,4 @@
     # 3. FINAL SUCCESS MESSAGE
     - name: Notify successful completion
       ansible.builtin.debug:
-        msg: "SUCCESS: Snapshot '{{ snapshot_name }}' has been successfully completed for {{ inventory_hostname }}."
+        msg: "SUCCESS: Snapshot backup_{{ inventory_hostname }}_{{ ansible_date_time.date }} has been successfully completed."
