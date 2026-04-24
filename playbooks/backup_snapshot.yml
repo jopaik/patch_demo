@@ -26,5 +26,5 @@
     
     - name: Set fact cache for snapshot result
       ansible.builtin.set_fact:
-        chached_snapshot_name: "backup_{{ inventory_hostname }}_{{ snapshot_time }}"
+        cached_snapshot_name: "backup_{{ inventory_hostname }}_{{ snapshot_time }}"
         cacheable: true
