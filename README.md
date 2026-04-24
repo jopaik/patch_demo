@@ -5,10 +5,14 @@ This project demonstrates the **RHEL** and **Windows** patching process for spec
 ### Demo Workflow
 The demo covers the following four phases:
 
-1.  **Pre-Check**: Validating the current system state and requirements.
-2.  **Patch**: Executing the update for the specified vulnerabilities.
-3.  **Rollback**: Demonstrating the ability to revert changes if issues arise.
-4.  **Post-Check**: Verifying successful installation and system health.
+1.  **Backup_Snapshot**: Take backup snapshot for possible restore.
+2.  **Pre_Check**: Validating the current system state and requirements.
+3.  **Patch**: Executing the update for the specified vulnerabilities for RHEL and Windows
+4.  **Patch Rollback**: Demonstrating the ability to revert changes if issues arise.
+5.  **Restore_Snapshot**: Restore if Patch rollback fails
+6.  **Reboot**: Reboot if required
+7.  **Post_Check**: Verifying successful installation and system health.
+8.  **Compliance_Report_Update**: Generate a report for patch status
 
 
 ### EDA Workflow activation 
