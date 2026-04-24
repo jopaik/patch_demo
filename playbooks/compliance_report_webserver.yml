@@ -1,27 +1,39 @@
 ---
 - name: Phase 1 - Audit Specific CVE and KB Status
   hosts: jp_rhel, jp_windows
-  become: yes
+  become: no
+  gather_facts: yes
+  vars:
+    # Centralized variables for the audit
+    cve_advisory_id: "{{ input_cve_id | default('RHSA-2024:1690') }}"
+    target_kb_id: "{{ input_kb_id | default('KB4052623') }}"
+    current_time: "{{ now(fmt='%Y-%m-%d_%H-%M-%S') }}"
+
   tasks:
     # --- RHEL AUDIT ---
-    - name: Check RHEL for RHSA-2024:1690
+    - name: "Check RHEL for {{ cve_advisory_id }}"
       when: ansible_os_family == "RedHat"
-      ansible.builtin.command: "dnf updateinfo list --advisory RHSA-2024:1690"
+      ansible.builtin.command: "dnf updateinfo list --advisory {{ cve_advisory_id }}"
       register: rhel_check
       changed_when: false
       failed_when: false
+      become: yes
 
     - name: Set RHEL Compliance Fact
       when: ansible_os_family == "RedHat"
       ansible.builtin.set_fact:
-        compliance_status: "{{ 'VULNERABLE' if 'RHSA-2024:1690' in rhel_check.stdout else 'COMPLIANT' }}"
-        target_id: "RHSA-2024:1690"
+        compliance_status: "{{ 'VULNERABLE' if cve_advisory_id in rhel_check.stdout else 'COMPLIANT' }}"
+        target_id: "{{ cve_advisory_id }}"
 
     # --- WINDOWS AUDIT ---
-    - name: Check Windows for KB4052623
+    - name: "Check Windows for {{ target_kb_id_kb_id }}"
       when: ansible_os_family == "Windows"
       ansible.windows.win_shell: |
-        if (Get-HotFix -Id KB4052623 -ErrorAction SilentlyContinue) { return "COMPLIANT" } else { return "VULNERABLE" }
+        if (Get-HotFix -Id {{ target_kb_id }} -ErrorAction SilentlyContinue) { 
+            return "COMPLIANT" 
+        } else { 
+            return "VULNERABLE" 
+        }
       register: win_check
       changed_when: false
 
@@ -29,7 +41,7 @@
       when: ansible_os_family == "Windows"
       ansible.builtin.set_fact:
         compliance_status: "{{ win_check.stdout | trim }}"
-        target_id: "KB4052623"
+        target_id: "{{ target_kb_id }}"
 
 - name: Phase 2 - Deploy Centralized Report Webserver
   hosts: jp_webserver
@@ -69,7 +81,7 @@
               <div class="container">
                   <div class="header">
                       <h1>Vulnerability Audit Dashboard</h1>
-                      <span>Generated: {{ ansible_date_time.date }} {{ ansible_date_time.time }}</span>
+                      <span>Generated: {{ current_time }} </span>
                   </div>
                   <table>
                       <tr>
