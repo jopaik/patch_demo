@@ -1,7 +1,7 @@
 ---
 - name: Backup Snapshot and Validation
   hosts: jp_rhel, jp_windows
-  gather_facts: no
+  gather_facts: No
   vars:
     # Snapshot configuration
     snapshot_name: "Pre_Patching_Backup_{{ ansible_date_time.date }}"
@@ -14,10 +14,10 @@
         msg: "CRITICAL: Starting pre-automation backup snapshots for all targeted hosts."
 
     # 2. THE 5-SECOND PAUSE
-    - name: Pause for 5 seconds to allow storage commit
+    - name: Pauseto allow storage commit
       ansible.builtin.pause:
         seconds: 5
-      when: snapshot_result.changed
+
 
     # 3. FINAL SUCCESS MESSAGE
     - name: Notify successful completion
