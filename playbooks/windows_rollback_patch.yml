@@ -27,7 +27,7 @@
 
     - name: Update cacheable reboot flag
       ansible.builtin.set_fact:
-        windows_reboot_needed: "{{ true if uninstall_result.rc == 3010 else false }}"
+        windows_reboot_needed: "{{ true if (undo_result.rc | default(0) == 3010) else false }}"
         cacheable: yes
 
     - name: Final Status
