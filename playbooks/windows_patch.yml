@@ -3,7 +3,7 @@
   hosts: jp_windows
   vars:
     # Define the KB number here (no "KB" prefix needed for the search string, usually)
-    target_kb_id: "{{ default('KB4052623') }}"
+    target_kb_id: "{{ input_kb_id | default('KB4052623') }}"
 
   tasks:
     - name: Search and Install specific update

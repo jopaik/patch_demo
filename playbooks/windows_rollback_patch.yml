@@ -2,7 +2,7 @@
 - name: Uninstall Specific Windows KB
   hosts: jp_windows
   vars:
-    target_kb_id: "{{ default('KB4052623') }}"
+    target_kb_id: "{{ input_kb_id | default('KB4052623') }}"
 
   tasks:
     - name: Check if KB is installed
