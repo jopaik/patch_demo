@@ -13,7 +13,7 @@
           - SecurityUpdates
           - CriticalUpdates
         accept_list:  # Changed from whitelist
-          - "*{{ target_kb_id }}*"
+          - ".*{{ target_kb_id }}.*"
         state: installed
       register: kb_patch_result
 
