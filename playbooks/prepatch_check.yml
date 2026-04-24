@@ -5,8 +5,8 @@
 
   vars:
     # Variables tailored to each OS type
-    cve_advisory_id: "{{ default('RHSA-2024:1690') }}"
-    target_kb_id: "{{ default('KB4052623') }}"
+    cve_advisory_id: "{{ cve_advisory_iddefault('RHSA-2024:1690') }}"
+    target_kb_id: "{{ target_kb_id | default('KB4052623') }}"
 
   tasks:
     # --- RHEL PRE-CHECK ---
