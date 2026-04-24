@@ -4,7 +4,7 @@
   gather_facts: 
   vars:
     # Snapshot configuration
-    snapshot_time: "{{ now(fmt='%Y-%m-%d_%H-%M-%S') }}
+    snapshot_time: "{{ now(fmt='%Y-%m-%d_%H-%M-%S') }}"
     snapshot_description: "Automated backup before security patching activity"
 
   tasks:
