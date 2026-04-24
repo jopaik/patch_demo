@@ -1,7 +1,7 @@
 ---
 - name: Backup Snapshot and Validation
   hosts: jp_rhel, jp_windows
-  gather_facts: 
+  gather_facts: no
   vars:
     # Snapshot configuration
     snapshot_time: "{{ now(fmt='%Y-%m-%d_%H-%M-%S') }}"
