@@ -6,14 +6,15 @@
     target_kb_id: "{{ input_kb_id | default('KB4052623') }}"
 
   tasks:
+  
     - name: Search and Install specific update
       ansible.windows.win_updates:
         category_names:
           - DefinitionUpdates
           - SecurityUpdates
           - CriticalUpdates
-        accept_list:  # Changed from whitelist
-          - ".*{{ target_kb_id }}.*"
+        accept_list: 
+          - ".*{{ target_kb_id }}.*"  # This means: "Anything - KB Number - Anything"
         state: installed
       register: kb_patch_result
 
