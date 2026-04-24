@@ -1,22 +1,38 @@
 ---
-- name: Uninstall Specific Windows KB
+- name: Rollback Targeted Windows Security Patch
   hosts: jp_windows
   vars:
-    target_kb_id: "{{ input_kb_id | default('KB4052623') }}"
+    # Ensure this matches the KB you want to remove
+    target_kb_id: "{{ input_kb_id | default('4052623') }}"
 
   tasks:
-    - name: Check if KB is installed
-      ansible.windows.win_shell: "Get-HotFix -Id {{ target_kb_id }}"
-      register: kb_check
+    - name: Clean KB ID
+      ansible.builtin.set_fact:
+        # Strip "KB" if the user included it, as wusa just needs the number
+        clean_kb_id: "{{ target_kb_id | regex_replace('(?i)KB', '') }}"
+
+    - name: Check if the KB is installed
+      ansible.windows.win_shell: "Get-HotFix -Id KB{{ clean_kb_id }}"
+      register: hotfix_check
       failed_when: false
       changed_when: false
 
-    - name: Uninstall the KB using WUSA
-      ansible.windows.win_shell: "wusa.exe /uninstall /kb:{{ target_kb_id.replace('KB','') }} /quiet /norestart"
-      when: kb_check.rc == 0
+    - name: Uninstall Windows Update (KB{{ clean_kb_id }})
+      ansible.windows.win_shell: "wusa.exe /uninstall /kb:{{ clean_kb_id }} /quiet /norestart"
       register: uninstall_result
+      when: hotfix_check.rc == 0
+      # rc 0 = success, rc 3010 = success but reboot required
+      failed_when: uninstall_result.rc not in [0, 3010]
+      changed_when: uninstall_result.rc in [0, 3010]
 
-    - name: Reboot if required after uninstall
-      ansible.windows.win_reboot:
-      # WUSA won't always report 'changed', so we check if the command executed
-      when: uninstall_result.rc == 0
+    - name: Update cacheable reboot flag
+      ansible.builtin.set_fact:
+        windows_reboot_needed: "{{ true if uninstall_result.rc == 3010 else false }}"
+        cacheable: yes
+
+    - name: Final Status
+      ansible.builtin.debug:
+        msg: 
+          - "Rollback attempt for KB{{ clean_kb_id }} finished."
+          - "Reboot Required: {{ windows_reboot_needed }}"
+          - "Note: If the update was 'Permanent', wusa will return an error."
