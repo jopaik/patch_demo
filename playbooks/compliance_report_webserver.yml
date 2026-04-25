@@ -5,7 +5,7 @@
   gather_facts: yes
   vars:
     # Centralized variables for the audit
-    cve_advisory_id: "{{ input_cve_id | default('RHSA-2026:8259') }}"
+    cve_advisory_id: "{{ input_cve_id | default('CVE-2026-33412') }}"
     target_kb_id: "{{ input_kb_id | default('KB4052623') }}"
     current_time: "{{ now(fmt='%Y-%m-%d_%H-%M-%S') }}"
 
