@@ -4,13 +4,14 @@
   become: no
   gather_facts: yes
   vars:
+    # Centralized lists for the audit
     cve_advisory_ids: "{{ input_cve_ids | default(['RHSA-2026:8259', 'CVE-2026-33412']) }}"
     target_kb_ids: "{{ input_kb_ids | default(['KB4052623', 'KB2267602']) }}"
     current_time: "{{ now(fmt='%Y-%m-%d_%H-%M-%S') }}"
 
   tasks:
     # --- RHEL AUDIT & REBOOT CHECK ---
-    - name: RHEL Audit Tasks
+    - name: RHEL Audit Block
       when: ansible_os_family == "RedHat"
       become: yes
       block:
@@ -25,7 +26,7 @@
           failed_when: false
           changed_when: false
 
-        - name: Set RHEL Facts
+        - name: Set RHEL Compliance Facts
           ansible.builtin.set_fact:
             missing_patches: "{{ cve_advisory_ids | select('in', rhel_check.stdout) | list }}"
             compliance_status: "{{ 'VULNERABLE' if (cve_advisory_ids | select('in', rhel_check.stdout) | list | length > 0) else 'COMPLIANT' }}"
@@ -33,7 +34,7 @@
             target_id_list: "{{ cve_advisory_ids | join(', ') }}"
 
     # --- WINDOWS AUDIT & REBOOT CHECK ---
-    - name: Windows Audit Tasks
+    - name: Windows Audit Block
       when: ansible_os_family == "Windows"
       block:
         - name: Check Windows for KBs
@@ -46,13 +47,16 @@
         - name: Check Windows Reboot Status
           ansible.windows.win_shell: |
             $reboot = $false
-            $paths = @("HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired", "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending")
+            $paths = @(
+                "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired",
+                "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending"
+            )
             foreach ($p in $paths) { if (Test-Path $p) { $reboot = $true } }
             return $reboot
           register: win_reboot_check
           changed_when: false
 
-        - name: Set Windows Facts
+        - name: Set Windows Compliance Facts
           ansible.builtin.set_fact:
             missing_patches: "{{ win_check.results | selectattr('rc', 'ne', 0) | map(attribute='item') | list }}"
             compliance_status: "{{ 'VULNERABLE' if (win_check.results | selectattr('rc', 'ne', 0) | list | length > 0) else 'COMPLIANT' }}"
@@ -63,7 +67,7 @@
   hosts: jp_webserver
   become: yes
   tasks:
-    - name: Ensure Apache is installed and configured
+    - name: Ensure Apache is Running
       block:
         - ansible.builtin.dnf: { name: httpd, state: present }
         - ansible.builtin.lineinfile:
