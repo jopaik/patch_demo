@@ -5,7 +5,7 @@
 
   vars:
     # Variables tailored to each OS type
-    cve_advisory_id: "{{ input_cve_id | default('RHSA-2024:1690') }}"
+    cve_advisory_id: "{{ input_cve_id | default('RHSA-2026:8259') }}"
     target_kb_id: "{{ input_kb_id | default('KB4052623') }}"
 
   tasks:

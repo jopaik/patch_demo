@@ -3,7 +3,7 @@
   hosts: jp_rhel
   become: true
   vars:
-    cve_advisory_id: "{{ input_cve_id | default('RHSA-2024:1690') }}"
+    cve_advisory_id: "{{ input_cve_id | default('RHSA-2026:8259') }}"
 
   tasks:
     - name: Apply specific advisories via command line
