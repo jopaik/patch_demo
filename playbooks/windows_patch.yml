@@ -2,19 +2,18 @@
 - name: Targeted Windows Security Patching
   hosts: jp_windows
   vars:
-    # Define the KB number here
-    target_kb_id: "{{ input_kb_id | default('KB4052623') }}"
+    # Changed to a list format
+    target_kb_ids: "{{ input_kb_ids | default(['KB4052623', 'KB2267602']) }}"
 
   tasks:
-  
-    - name: Search and Install specific update
+    - name: Search and Install specific updates
       ansible.windows.win_updates:
         category_names:
           - DefinitionUpdates
           - SecurityUpdates
           - CriticalUpdates
-        accept_list: 
-          - ".*{{ target_kb_id }}.*"  # This means: "Anything - KB Number - Anything"
+        # We use a map filter to wrap each KB ID in regex: ".*KB123.*"
+        accept_list: "{{ target_kb_ids | map('regex_replace', '^(.*)$', '.*\\1.*') | list }}"
         state: installed
       register: kb_patch_result
 
@@ -26,7 +25,7 @@
     - name: Audit Output
       ansible.builtin.debug:
         msg: 
-          - "Target KB: {{ target_kb_id }}"
+          - "Target KBs: {{ target_kb_ids | join(', ') }}"
           - "Found matching updates: {{ kb_patch_result.found_update_count }}"
           - "Installed successfully: {{ kb_patch_result.installed_update_count }}"
           - "Reboot Required (Cached): {{ windows_reboot_needed }}"

@@ -1,38 +1,52 @@
 ---
-- name: Rollback Targeted Windows Security Patch
+- name: Rollback Targeted Windows Security Patches
   hosts: jp_windows
   vars:
-    # Ensure this matches the KB you want to remove
-    target_kb_id: "{{ input_kb_id | default('4052623') }}"
+    # Changed to a list format
+    target_kb_ids: "{{ input_kb_ids | default(['KB4052623', 'KB2267602']) }}"
 
   tasks:
-    - name: Clean KB ID
-      ansible.builtin.set_fact:
-        # Strip "KB" if the user included it, as wusa just needs the number
-        clean_kb_id: "{{ target_kb_id | regex_replace('(?i)KB', '') }}"
+    - name: Process Rollback Loop
+      block:
+        - name: Clean KB IDs and Check Status
+          # We clean the KB prefix and check existence in one go for the loop
+          ansible.windows.win_shell: |
+            $id = "{{ item }}".ToUpper().Replace("KB", "")
+            if (Get-HotFix -Id "KB$id" -ErrorAction SilentlyContinue) {
+                return $id
+            } else {
+                exit 1
+            }
+          loop: "{{ target_kb_ids }}"
+          register: hotfix_checks
+          failed_when: false
+          changed_when: false
 
-    - name: Check if the KB is installed
-      ansible.windows.win_shell: "Get-HotFix -Id KB{{ clean_kb_id }}"
-      register: hotfix_check
-      failed_when: false
-      changed_when: false
-
-    - name: Uninstall Windows Update (KB{{ clean_kb_id }})
-      ansible.windows.win_shell: "wusa.exe /uninstall /kb:{{ clean_kb_id }} /quiet /norestart"
-      register: uninstall_result
-      when: hotfix_check.rc == 0
-      # rc 0 = success, rc 3010 = success but reboot required
-      failed_when: uninstall_result.rc not in [0, 3010]
-      changed_when: uninstall_result.rc in [0, 3010]
+        - name: Uninstall Windows Updates
+          ansible.windows.win_shell: "wusa.exe /uninstall /kb:{{ item.stdout | trim }} /quiet /norestart"
+          loop: "{{ hotfix_checks.results }}"
+          register: uninstall_results
+          # Only run if the previous check found the KB (rc == 0)
+          when: item.rc == 0
+          # rc 0 = success, rc 3010 = success but reboot required
+          failed_when: 
+            - uninstall_results.rc not in [0, 3010]
+            - "'is not installed' not in uninstall_results.stderr"
+          changed_when: uninstall_results.rc in [0, 3010]
 
     - name: Update cacheable reboot flag
       ansible.builtin.set_fact:
-        windows_reboot_needed: "{{ true if (undo_result.rc | default(0) == 3010) else false }}"
+        # If any of the uninstall tasks returned 3010, a reboot is needed
+        windows_reboot_needed: >-
+          {{ uninstall_results.results 
+             | selectattr('rc', 'defined') 
+             | selectattr('rc', 'equalto', 3010) 
+             | list | length > 0 }}
         cacheable: yes
 
     - name: Final Status
       ansible.builtin.debug:
         msg: 
-          - "Rollback attempt for KB{{ clean_kb_id }} finished."
+          - "Rollback attempted for: {{ target_kb_ids | join(', ') }}"
           - "Reboot Required: {{ windows_reboot_needed }}"
-          - "Note: If the update was 'Permanent', wusa will return an error."
+          - "Summary: Check 'uninstall_results' for per-KB detail."

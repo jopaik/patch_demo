@@ -1,36 +1,48 @@
 ---
-- name: Rollback Specific RHEL CVE Advisory
+- name: Rollback Specific RHEL CVE Advisories
   hosts: jp_rhel
   become: true
   vars:
-    cve_advisory_id: "{{ input_cve_id | default('RHSA-2026:8259') }}"
+    # Initialized as a list
+    cve_advisory_ids: "{{ input_cve_ids | default(['RHSA-2026:8259', 'CVE-2026-33412']) }}"
 
   tasks:
-    - name: Find the DNF transaction ID for the advisory
-      # This looks for the ID in the first column where the advisory ID appears
+    - name: Find DNF transaction IDs for the advisories
+      # This loops through each ID to find its corresponding transaction number
       ansible.builtin.shell: >
-        dnf history list {{ cve_advisory_id }} | grep -m 1 {{ cve_advisory_id }} | awk '{print $1}'
-      register: dnf_history_id
+        dnf history list {{ item }} | grep -m 1 {{ item }} | awk '{print $1}'
+      loop: "{{ cve_advisory_ids }}"
+      register: dnf_history_results
       changed_when: false
       failed_when: false
 
-    - name: Undo the DNF transaction
+    - name: Undo the DNF transactions
       ansible.builtin.command:
-        cmd: "dnf history undo {{ dnf_history_id.stdout }} -y"
-      register: undo_result
-      # Only run if stdout is a number; skip if it's empty or contains "No"
+        cmd: "dnf history undo {{ item.stdout }} -y"
+      # Loops through the results of the previous task
+      loop: "{{ dnf_history_results.results }}"
+      register: undo_results
+      # Only run if stdout is a valid numeric transaction ID
       when: 
-        - dnf_history_id.stdout != ""
-        - dnf_history_id.stdout is regex('^[0-9]+$')
-      
-    - name: Report failure if transaction not found
-      ansible.builtin.debug:
-        msg: "Could not find a DNF transaction for advisory {{ cve_advisory_id }}. Nothing to rollback."
-      when: dnf_history_id.stdout == "" or dnf_history_id.stdout is not regex('^[0-9]+$')
+        - item.stdout is defined
+        - item.stdout != ""
+        - item.stdout is regex('^[0-9]+$')
 
-    - name: Check reboot status if rollback happened
+    - name: Check reboot status if any rollback happened
       ansible.builtin.command: needs-restarting -r
       register: reboot_check
       failed_when: false
       changed_when: false
-      when: undo_result is skipped or undo_result is success
+      # We only check reboot if at least one undo task wasn't skipped
+      when: undo_results.results | selectattr('skipped', 'undefined') | list | length > 0
+
+    - name: Set reboot_required fact
+      ansible.builtin.set_fact:
+        reboot_required: "{{ reboot_check.rc != 0 if reboot_check.rc is defined else false }}"
+        cacheable: yes
+
+    - name: Final Summary
+      ansible.builtin.debug:
+        msg: 
+          - "Processed Advisories: {{ cve_advisory_ids | join(', ') }}"
+          - "Reboot Required: {{ 'YES' if reboot_required else 'NO' }}"

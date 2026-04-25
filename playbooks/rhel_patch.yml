@@ -1,14 +1,17 @@
 ---
-- name: Patch Specific RHEL CVE
+- name: Patch Specific RHEL CVEs
   hosts: jp_rhel
   become: true
   vars:
-    cve_advisory_id: "{{ input_cve_id | default('RHSA-2026:8259') }}"
+    # Changed to a list format
+    cve_advisory_ids: "{{ input_cve_ids | default(['RHSA-2026:8259', 'CVE-2026-33412']) }}"
 
   tasks:
-    - name: Apply specific advisories via command line
+    - name: Apply specific advisories via dnf
+      # The join filter turns ['ID1', 'ID2'] into "ID1 --advisory=ID2"
+      # or we can simply pass them as a space-separated list to one flag
       ansible.builtin.command:
-        cmd: "dnf update --advisory={{ cve_advisory_id }} -y"
+        cmd: "dnf update --advisory={{ cve_advisory_ids | join(' --advisory=') }} -y"
       register: dnf_result
       changed_when: "'Nothing to do' not in dnf_result.stdout"
      
@@ -20,9 +23,12 @@
 
     - name: Set reboot_required fact
       ansible.builtin.set_fact:
-        reboot_required: "{{ true if reboot_check.rc != 0 else false }}"
+        reboot_required: "{{ reboot_check.rc != 0 }}"
         cacheable: yes
 
     - name: Report status
       ansible.builtin.debug:
-        msg: "Patching complete. Reboot required: {{ reboot_required }}"
+        msg: 
+          - "Target Advisories: {{ cve_advisory_ids | join(', ') }}"
+          - "Patching status: {{ 'Changes applied' if dnf_result.changed else 'No updates needed' }}"
+          - "Reboot required: {{ reboot_required }}"

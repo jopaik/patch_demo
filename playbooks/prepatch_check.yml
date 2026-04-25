@@ -5,8 +5,8 @@
 
   vars:
     # Accept lists from extra_vars, or default to these lists
-    cve_advisory_ids: "{{ input_cve_ids | default(['RHSA-2026:8259']) }}"
-    target_kb_ids: "{{ input_kb_ids | default(['KB4052623']) }}"
+    cve_advisory_ids: "{{ input_cve_ids | default(['RHSA-2026:8259', 'CVE-2026-33412']) }}"
+    target_kb_ids: "{{ input_kb_ids | default(['KB4052623', 'KB2267602']) }}"
 
   tasks:
     # --- RHEL PRE-CHECK ---

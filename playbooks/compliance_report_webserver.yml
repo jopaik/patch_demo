@@ -1,47 +1,49 @@
 ---
-- name: Phase 1 - Audit Specific CVE and KB Status
+- name: Phase 1 - Audit Multiple CVE and KB Status
   hosts: jp_rhel, jp_windows
   become: no
   gather_facts: yes
   vars:
-    # Centralized variables for the audit
-    cve_advisory_id: "{{ input_cve_id | default('CVE-2026-28417') }}"
-    target_kb_id: "{{ input_kb_id | default('KB4052623') }}"
+    # Centralized lists for the audit
+    cve_advisory_ids: "{{ input_cve_ids | default(['CVE-2026-28417', 'RHSA-2026:8259']) }}"
+    target_kb_ids: "{{ input_kb_ids | default(['KB4052623', 'KB2267602']) }}"
     current_time: "{{ now(fmt='%Y-%m-%d_%H-%M-%S') }}"
 
   tasks:
     # --- RHEL AUDIT ---
-    - name: "Check RHEL for {{ cve_advisory_id }}"
+    - name: Check RHEL for Advisories
       when: ansible_os_family == "RedHat"
-      ansible.builtin.command: "dnf updateinfo list --advisory {{ cve_advisory_id }}"
+      become: yes
+      ansible.builtin.command: "dnf updateinfo list --advisory {{ cve_advisory_ids | join(' ') }}"
       register: rhel_check
       changed_when: false
       failed_when: false
-      become: yes
 
-    - name: Set RHEL Compliance Fact
+    - name: Set RHEL Compliance Facts
       when: ansible_os_family == "RedHat"
       ansible.builtin.set_fact:
-        compliance_status: "{{ 'VULNERABLE' if cve_advisory_id in rhel_check.stdout else 'COMPLIANT' }}"
-        target_id: "{{ cve_advisory_id }}"
+        # If any requested ID is found in the 'dnf' output, mark as vulnerable
+        missing_patches: "{{ cve_advisory_ids | select('in', rhel_check.stdout) | list }}"
+        compliance_status: "{{ 'VULNERABLE' if (cve_advisory_ids | select('in', rhel_check.stdout) | list | length > 0) else 'COMPLIANT' }}"
+        target_id_list: "{{ cve_advisory_ids | join(', ') }}"
 
     # --- WINDOWS AUDIT ---
-    - name: "Check Windows for {{ target_kb_id_kb_id }}"
+    - name: Check Windows for KBs
       when: ansible_os_family == "Windows"
       ansible.windows.win_shell: |
-        if (Get-HotFix -Id {{ target_kb_id }} -ErrorAction SilentlyContinue) { 
-            return "COMPLIANT" 
-        } else { 
-            return "VULNERABLE" 
-        }
+        if (Get-HotFix -Id {{ item }} -ErrorAction SilentlyContinue) { exit 0 } else { exit 1 }
+      loop: "{{ target_kb_ids }}"
       register: win_check
+      failed_when: false
       changed_when: false
 
-    - name: Set Windows Compliance Fact
+    - name: Set Windows Compliance Facts
       when: ansible_os_family == "Windows"
       ansible.builtin.set_fact:
-        compliance_status: "{{ win_check.stdout | trim }}"
-        target_id: "{{ target_kb_id }}"
+        # Filter the loop results to find which KBs returned exit code 1 (missing)
+        missing_patches: "{{ win_check.results | selectattr('rc', 'ne', 0) | map(attribute='item') | list }}"
+        compliance_status: "{{ 'VULNERABLE' if (win_check.results | selectattr('rc', 'ne', 0) | list | length > 0) else 'COMPLIANT' }}"
+        target_id_list: "{{ target_kb_ids | join(', ') }}"
 
 - name: Phase 2 - Deploy Centralized Report Webserver
   hosts: jp_webserver
@@ -49,89 +51,89 @@
   vars:
     current_time: "{{ now(fmt='%Y-%m-%d_%H-%M-%S') }}"
   tasks:
-  - name: Install Apache
-    ansible.builtin.dnf:
-      name: httpd
-      state: present
+    - name: Install Apache
+      ansible.builtin.dnf:
+        name: httpd
+        state: present
 
-  - name: Configure Apache to listen on port 8080
-    ansible.builtin.lineinfile:
-      path: /etc/httpd/conf/httpd.conf
-      regexp: '^Listen '
-      line: 'Listen 8080'
-    notify: Restart Apache Service
+    - name: Configure Apache and Firewall
+      block:
+        - name: Configure Apache to listen on port 8080
+          ansible.builtin.lineinfile:
+            path: /etc/httpd/conf/httpd.conf
+            regexp: '^Listen '
+            line: 'Listen 8080'
 
-  - name: Allow port 8080 through firewalld
-    ansible.posix.firewalld:
-      port: 8080/tcp
-      permanent: yes
-      state: enabled
-      immediate: yes
+        - name: Allow port 8080 and HTTP through firewalld
+          ansible.posix.firewalld:
+            port: "{{ item }}"
+            permanent: yes
+            state: enabled
+            immediate: yes
+          loop: ["8080/tcp", "80/tcp"]
 
-  - name: Start Apache
-    ansible.builtin.service:
-      name: httpd
-      state: started
-      enabled: yes
+    - name: Start Apache
+      ansible.builtin.service:
+        name: httpd
+        state: started
+        enabled: yes
 
-  - name: Allow HTTP service in firewalld
-    ansible.posix.firewalld:
-      service: http
-      permanent: yes
-      state: enabled
-      immediate: yes
+    - name: Generate HTML Compliance Report
+      ansible.builtin.copy:
+        dest: "/var/www/html/index.html"
+        content: |
+          <!DOCTYPE html>
+          <html>
+          <head>
+              <title>Security Patch Audit Report</title>
+              <style>
+                  body { font-family: 'Segoe UI', sans-serif; margin: 40px; background-color: #f8f9fa; }
+                  .container { background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+                  table { width: 100%; border-collapse: collapse; margin-top: 25px; }
+                  th, td { padding: 12px 15px; text-align: left; border-bottom: 1px solid #eee; }
+                  th { background-color: #212529; color: white; text-transform: uppercase; font-size: 12px; }
+                  .VULNERABLE { color: #dc3545; font-weight: bold; background-color: #f8d7da; padding: 4px 8px; border-radius: 4px; }
+                  .COMPLIANT { color: #198754; font-weight: bold; background-color: #d1e7dd; padding: 4px 8px; border-radius: 4px; }
+                  .header { display: flex; justify-content: space-between; border-bottom: 2px solid #333; padding-bottom: 10px; }
+                  .patch-list { font-size: 0.85em; color: #666; }
+              </style>
+          </head>
+          <body>
+              <div class="container">
+                  <div class="header">
+                      <h1>Vulnerability Audit Dashboard</h1>
+                      <span>Generated: {{ current_time }}</span>
+                  </div>
+                  <table>
+                      <tr>
+                          <th>System Name</th>
+                          <th>OS Family</th>
+                          <th>Target IDs Checked</th>
+                          <th>Missing Patches</th>
+                          <th>Status</th>
+                      </tr>
+                      {% for host in groups['all'] %}
+                      {% if hostvars[host]['compliance_status'] is defined %}
+                      <tr>
+                          <td><strong>{{ host }}</strong></td>
+                          <td>{{ hostvars[host]['ansible_os_family'] }}</td>
+                          <td><span class="patch-list">{{ hostvars[host]['target_id_list'] }}</span></td>
+                          <td>{{ hostvars[host]['missing_patches'] | join(', ') if hostvars[host]['missing_patches'] else 'None' }}</td>
+                          <td>
+                              <span class="{{ hostvars[host]['compliance_status'] }}">
+                                  {{ hostvars[host]['compliance_status'] }}
+                              </span>
+                          </td>
+                      </tr>
+                      {% endif %}
+                      {% endfor %}
+                  </table>
+              </div>
+          </body>
+          </html>
+        mode: '0644'
+      notify: Restart Apache Service
 
-  - name: Generate HTML Compliance Report
-    ansible.builtin.copy:
-      dest: "/var/www/html/index.html"
-      content: |
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <title>Security Patch Audit Report</title>
-            <style>
-                body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 50px; background-color: #f0f2f5; }
-                .container { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
-                table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-                th, td { padding: 15px; text-align: left; border-bottom: 1px solid #ddd; }
-                th { background-color: #343a40; color: white; }
-                .VULNERABLE { color: #d9534f; font-weight: bold; }
-                .COMPLIANT { color: #5cb85c; font-weight: bold; }
-                .header { display: flex; justify-content: space-between; align-items: center; }
-            </style>
-        </head>
-        <body>
-            <div class="container">
-                <div class="header">
-                    <h1>Vulnerability Audit Dashboard</h1>
-                    <span>Generated: {{ current_time }} </span>
-                </div>
-                <table>
-                    <tr>
-                        <th>System Name</th>
-                        <th>OS Family</th>
-                        <th>Target ID</th>
-                        <th>Status</th>
-                    </tr>
-                    {% for host in groups['all'] %}
-                    {% if hostvars[host]['compliance_status'] is defined %}
-                    <tr>
-                        <td>{{ host }}</td>
-                        <td>{{ hostvars[host]['ansible_os_family'] }}</td>
-                        <td>{{ hostvars[host]['target_id'] }}</td>
-                        <td class="{{ hostvars[host]['compliance_status'] }}">
-                            {{ hostvars[host]['compliance_status'] }}
-                        </td>
-                    </tr>
-                    {% endif %}
-                    {% endfor %}
-                </table>
-            </div>
-        </body>
-        </html>
-      mode: '0644'
-    notify: Restart Apache Service
-    
   handlers:
     - name: Restart Apache Service
       ansible.builtin.service:
