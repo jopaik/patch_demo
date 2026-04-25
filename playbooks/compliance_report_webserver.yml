@@ -32,8 +32,8 @@
             compliance_status: "{{ 'VULNERABLE' if (cve_advisory_ids | select('in', rhel_check.stdout) | list | length > 0) else 'COMPLIANT' }}"
             reboot_pending: "{{ 'YES' if rhel_reboot_check.rc != 0 else 'NO' }}"
             target_id_list: "{{ cve_advisory_ids | join(', ') }}"
-
-    # --- WINDOWS AUDIT & REBOOT CHECK ---
+            
+# --- WINDOWS AUDIT & REBOOT CHECK ---
     - name: Windows Audit Block
       when: ansible_os_family == "Windows"
       block:
@@ -42,6 +42,8 @@
             if (Get-HotFix -Id {{ item }} -ErrorAction SilentlyContinue) { exit 0 } else { exit 1 }
           loop: "{{ target_kb_ids }}"
           register: win_check
+          # FIX: This prevents the "red" error message in your console
+          failed_when: false 
           changed_when: false
 
         - name: Check Windows Reboot Status
@@ -54,10 +56,12 @@
             foreach ($p in $paths) { if (Test-Path $p) { $reboot = $true } }
             return $reboot
           register: win_reboot_check
+          failed_when: false
           changed_when: false
 
         - name: Set Windows Compliance Facts
           ansible.builtin.set_fact:
+            # We still look for rc: 1 here to identify the vulnerability
             missing_patches: "{{ win_check.results | selectattr('rc', 'ne', 0) | map(attribute='item') | list }}"
             compliance_status: "{{ 'VULNERABLE' if (win_check.results | selectattr('rc', 'ne', 0) | list | length > 0) else 'COMPLIANT' }}"
             reboot_pending: "{{ 'YES' if win_reboot_check.stdout | trim == 'True' else 'NO' }}"
