@@ -46,6 +46,8 @@
 - name: Phase 2 - Deploy Centralized Report Webserver
   hosts: jp_webserver
   become: yes
+  vars:
+    current_time: "{{ now(fmt='%Y-%m-%d_%H-%M-%S') }}"
   tasks:
     - name: Install Apache
       ansible.builtin.dnf:
