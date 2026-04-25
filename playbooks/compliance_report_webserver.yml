@@ -49,74 +49,88 @@
   vars:
     current_time: "{{ now(fmt='%Y-%m-%d_%H-%M-%S') }}"
   tasks:
-    - name: Install Apache
-      ansible.builtin.dnf:
-        name: httpd
-        state: present
+  - name: Install Apache
+    ansible.builtin.dnf:
+      name: httpd
+      state: present
 
-    - name: Start Apache
-      ansible.builtin.service:
-        name: httpd
-        state: started
-        enabled: yes
+  - name: Configure Apache to listen on port 8080
+    ansible.builtin.lineinfile:
+      path: /etc/httpd/conf/httpd.conf
+      regexp: '^Listen '
+      line: 'Listen 8080'
+    notify: Restart Apache Service
 
-    - name: Allow HTTP service in firewalld
-      ansible.posix.firewalld:
-        service: http
-        permanent: yes
-        state: enabled
-        immediate: yes
+  - name: Allow port 8080 through firewalld
+    ansible.posix.firewalld:
+      port: 8080/tcp
+      permanent: yes
+      state: enabled
+      immediate: yes
 
-    - name: Generate HTML Compliance Report
-      ansible.builtin.copy:
-        dest: "/var/www/html/index.html"
-        content: |
-          <!DOCTYPE html>
-          <html>
-          <head>
-              <title>Security Patch Audit Report</title>
-              <style>
-                  body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 50px; background-color: #f0f2f5; }
-                  .container { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
-                  table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-                  th, td { padding: 15px; text-align: left; border-bottom: 1px solid #ddd; }
-                  th { background-color: #343a40; color: white; }
-                  .VULNERABLE { color: #d9534f; font-weight: bold; }
-                  .COMPLIANT { color: #5cb85c; font-weight: bold; }
-                  .header { display: flex; justify-content: space-between; align-items: center; }
-              </style>
-          </head>
-          <body>
-              <div class="container">
-                  <div class="header">
-                      <h1>Vulnerability Audit Dashboard</h1>
-                      <span>Generated: {{ current_time }} </span>
-                  </div>
-                  <table>
-                      <tr>
-                          <th>System Name</th>
-                          <th>OS Family</th>
-                          <th>Target ID</th>
-                          <th>Status</th>
-                      </tr>
-                      {% for host in groups['all'] %}
-                      {% if hostvars[host]['compliance_status'] is defined %}
-                      <tr>
-                          <td>{{ host }}</td>
-                          <td>{{ hostvars[host]['ansible_os_family'] }}</td>
-                          <td>{{ hostvars[host]['target_id'] }}</td>
-                          <td class="{{ hostvars[host]['compliance_status'] }}">
-                              {{ hostvars[host]['compliance_status'] }}
-                          </td>
-                      </tr>
-                      {% endif %}
-                      {% endfor %}
-                  </table>
-              </div>
-          </body>
-          </html>
-        mode: '0644'
-      notify: Restart Apache Service
+  - name: Start Apache
+    ansible.builtin.service:
+      name: httpd
+      state: started
+      enabled: yes
+
+  - name: Allow HTTP service in firewalld
+    ansible.posix.firewalld:
+      service: http
+      permanent: yes
+      state: enabled
+      immediate: yes
+
+  - name: Generate HTML Compliance Report
+    ansible.builtin.copy:
+      dest: "/var/www/html/index.html"
+      content: |
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Security Patch Audit Report</title>
+            <style>
+                body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 50px; background-color: #f0f2f5; }
+                .container { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+                table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+                th, td { padding: 15px; text-align: left; border-bottom: 1px solid #ddd; }
+                th { background-color: #343a40; color: white; }
+                .VULNERABLE { color: #d9534f; font-weight: bold; }
+                .COMPLIANT { color: #5cb85c; font-weight: bold; }
+                .header { display: flex; justify-content: space-between; align-items: center; }
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="header">
+                    <h1>Vulnerability Audit Dashboard</h1>
+                    <span>Generated: {{ current_time }} </span>
+                </div>
+                <table>
+                    <tr>
+                        <th>System Name</th>
+                        <th>OS Family</th>
+                        <th>Target ID</th>
+                        <th>Status</th>
+                    </tr>
+                    {% for host in groups['all'] %}
+                    {% if hostvars[host]['compliance_status'] is defined %}
+                    <tr>
+                        <td>{{ host }}</td>
+                        <td>{{ hostvars[host]['ansible_os_family'] }}</td>
+                        <td>{{ hostvars[host]['target_id'] }}</td>
+                        <td class="{{ hostvars[host]['compliance_status'] }}">
+                            {{ hostvars[host]['compliance_status'] }}
+                        </td>
+                    </tr>
+                    {% endif %}
+                    {% endfor %}
+                </table>
+            </div>
+        </body>
+        </html>
+      mode: '0644'
+    notify: Restart Apache Service
     
   handlers:
     - name: Restart Apache Service
