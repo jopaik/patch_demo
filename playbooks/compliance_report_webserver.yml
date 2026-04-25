@@ -60,6 +60,13 @@
         state: started
         enabled: yes
 
+    - name: Allow HTTP service in firewalld
+      ansible.posix.firewalld:
+        service: http
+        permanent: yes
+        state: enabled
+        immediate: yes
+
     - name: Generate HTML Compliance Report
       ansible.builtin.copy:
         dest: "/var/www/html/index.html"
@@ -109,3 +116,10 @@
           </body>
           </html>
         mode: '0644'
+      notify: Restart Apache Service
+    
+  handlers:
+    - name: Restart Apache Service
+      ansible.builtin.service:
+        name: httpd
+        state: restarted
