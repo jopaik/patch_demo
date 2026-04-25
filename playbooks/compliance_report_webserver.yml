@@ -4,78 +4,74 @@
   become: no
   gather_facts: yes
   vars:
-    # Centralized lists for the audit
     cve_advisory_ids: "{{ input_cve_ids | default(['RHSA-2026:8259', 'CVE-2026-33412']) }}"
     target_kb_ids: "{{ input_kb_ids | default(['KB4052623', 'KB2267602']) }}"
     current_time: "{{ now(fmt='%Y-%m-%d_%H-%M-%S') }}"
 
   tasks:
-    # --- RHEL AUDIT ---
-    - name: Check RHEL for Advisories
+    # --- RHEL AUDIT & REBOOT CHECK ---
+    - name: RHEL Audit Tasks
       when: ansible_os_family == "RedHat"
       become: yes
-      ansible.builtin.command: "dnf updateinfo list --advisory {{ cve_advisory_ids | join(' ') }}"
-      register: rhel_check
-      changed_when: false
-      failed_when: false
+      block:
+        - name: Check RHEL for Advisories
+          ansible.builtin.command: "dnf updateinfo list --advisory {{ cve_advisory_ids | join(' ') }}"
+          register: rhel_check
+          changed_when: false
 
-    - name: Set RHEL Compliance Facts
-      when: ansible_os_family == "RedHat"
-      ansible.builtin.set_fact:
-        # If any requested ID is found in the 'dnf' output, mark as vulnerable
-        missing_patches: "{{ cve_advisory_ids | select('in', rhel_check.stdout) | list }}"
-        compliance_status: "{{ 'VULNERABLE' if (cve_advisory_ids | select('in', rhel_check.stdout) | list | length > 0) else 'COMPLIANT' }}"
-        target_id_list: "{{ cve_advisory_ids | join(', ') }}"
+        - name: Check RHEL Reboot Status
+          ansible.builtin.command: needs-restarting -r
+          register: rhel_reboot_check
+          failed_when: false
+          changed_when: false
 
-    # --- WINDOWS AUDIT ---
-    - name: Check Windows for KBs
+        - name: Set RHEL Facts
+          ansible.builtin.set_fact:
+            missing_patches: "{{ cve_advisory_ids | select('in', rhel_check.stdout) | list }}"
+            compliance_status: "{{ 'VULNERABLE' if (cve_advisory_ids | select('in', rhel_check.stdout) | list | length > 0) else 'COMPLIANT' }}"
+            reboot_pending: "{{ 'YES' if rhel_reboot_check.rc != 0 else 'NO' }}"
+            target_id_list: "{{ cve_advisory_ids | join(', ') }}"
+
+    # --- WINDOWS AUDIT & REBOOT CHECK ---
+    - name: Windows Audit Tasks
       when: ansible_os_family == "Windows"
-      ansible.windows.win_shell: |
-        if (Get-HotFix -Id {{ item }} -ErrorAction SilentlyContinue) { exit 0 } else { exit 1 }
-      loop: "{{ target_kb_ids }}"
-      register: win_check
-      failed_when: false
-      changed_when: false
+      block:
+        - name: Check Windows for KBs
+          ansible.windows.win_shell: |
+            if (Get-HotFix -Id {{ item }} -ErrorAction SilentlyContinue) { exit 0 } else { exit 1 }
+          loop: "{{ target_kb_ids }}"
+          register: win_check
+          changed_when: false
 
-    - name: Set Windows Compliance Facts
-      when: ansible_os_family == "Windows"
-      ansible.builtin.set_fact:
-        # Filter the loop results to find which KBs returned exit code 1 (missing)
-        missing_patches: "{{ win_check.results | selectattr('rc', 'ne', 0) | map(attribute='item') | list }}"
-        compliance_status: "{{ 'VULNERABLE' if (win_check.results | selectattr('rc', 'ne', 0) | list | length > 0) else 'COMPLIANT' }}"
-        target_id_list: "{{ target_kb_ids | join(', ') }}"
+        - name: Check Windows Reboot Status
+          ansible.windows.win_shell: |
+            $reboot = $false
+            $paths = @("HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired", "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending")
+            foreach ($p in $paths) { if (Test-Path $p) { $reboot = $true } }
+            return $reboot
+          register: win_reboot_check
+          changed_when: false
+
+        - name: Set Windows Facts
+          ansible.builtin.set_fact:
+            missing_patches: "{{ win_check.results | selectattr('rc', 'ne', 0) | map(attribute='item') | list }}"
+            compliance_status: "{{ 'VULNERABLE' if (win_check.results | selectattr('rc', 'ne', 0) | list | length > 0) else 'COMPLIANT' }}"
+            reboot_pending: "{{ 'YES' if win_reboot_check.stdout | trim == 'True' else 'NO' }}"
+            target_id_list: "{{ target_kb_ids | join(', ') }}"
 
 - name: Phase 2 - Deploy Centralized Report Webserver
   hosts: jp_webserver
   become: yes
-  vars:
-    current_time: "{{ now(fmt='%Y-%m-%d_%H-%M-%S') }}"
   tasks:
-    - name: Install Apache
-      ansible.builtin.dnf:
-        name: httpd
-        state: present
-
-    - name: Configure Apache and Firewall
+    - name: Ensure Apache is installed and configured
       block:
-        - name: Configure Apache to listen on port 8080
-          ansible.builtin.lineinfile:
+        - ansible.builtin.dnf: { name: httpd, state: present }
+        - ansible.builtin.lineinfile:
             path: /etc/httpd/conf/httpd.conf
             regexp: '^Listen '
             line: 'Listen 8080'
-
-        - name: Allow ONLY port 8080 through firewalld
-          ansible.posix.firewalld:
-            port: 8080/tcp
-            permanent: yes
-            state: enabled
-            immediate: yes
-
-    - name: Start Apache
-      ansible.builtin.service:
-        name: httpd
-        state: started
-        enabled: yes
+        - ansible.posix.firewalld: { port: 8080/tcp, permanent: yes, state: enabled, immediate: yes }
+        - ansible.builtin.service: { name: httpd, state: started, enabled: yes }
 
     - name: Generate HTML Compliance Report
       ansible.builtin.copy:
@@ -90,9 +86,9 @@
                   .container { background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
                   table { width: 100%; border-collapse: collapse; margin-top: 25px; }
                   th, td { padding: 12px 15px; text-align: left; border-bottom: 1px solid #eee; }
-                  th { background-color: #212529; color: white; text-transform: uppercase; font-size: 12px; }
-                  .VULNERABLE { color: #dc3545; font-weight: bold; background-color: #f8d7da; padding: 4px 8px; border-radius: 4px; }
-                  .COMPLIANT { color: #198754; font-weight: bold; background-color: #d1e7dd; padding: 4px 8px; border-radius: 4px; }
+                  th { background-color: #212529; color: white; text-transform: uppercase; font-size: 11px; }
+                  .VULNERABLE, .REBOOT-YES { color: #dc3545; font-weight: bold; background-color: #f8d7da; padding: 4px 8px; border-radius: 4px; }
+                  .COMPLIANT, .REBOOT-NO { color: #198754; font-weight: bold; background-color: #d1e7dd; padding: 4px 8px; border-radius: 4px; }
                   .header { display: flex; justify-content: space-between; border-bottom: 2px solid #333; padding-bottom: 10px; }
                   .patch-list { font-size: 0.85em; color: #666; }
               </style>
@@ -101,7 +97,7 @@
               <div class="container">
                   <div class="header">
                       <h1>Vulnerability Audit Dashboard</h1>
-                      <span>Generated: {{ current_time }}</span>
+                      <span>Generated: {{ now(fmt='%Y-%m-%d %H:%M:%S') }}</span>
                   </div>
                   <table>
                       <tr>
@@ -109,6 +105,7 @@
                           <th>OS Family</th>
                           <th>Target IDs Checked</th>
                           <th>Missing Patches</th>
+                          <th>Reboot Required?</th>
                           <th>Status</th>
                       </tr>
                       {% for host in groups['all'] %}
@@ -118,6 +115,11 @@
                           <td>{{ hostvars[host]['ansible_os_family'] }}</td>
                           <td><span class="patch-list">{{ hostvars[host]['target_id_list'] }}</span></td>
                           <td>{{ hostvars[host]['missing_patches'] | join(', ') if hostvars[host]['missing_patches'] else 'None' }}</td>
+                          <td>
+                              <span class="REBOOT-{{ hostvars[host]['reboot_pending'] }}">
+                                  {{ hostvars[host]['reboot_pending'] }}
+                              </span>
+                          </td>
                           <td>
                               <span class="{{ hostvars[host]['compliance_status'] }}">
                                   {{ hostvars[host]['compliance_status'] }}
@@ -135,6 +137,4 @@
 
   handlers:
     - name: Restart Apache Service
-      ansible.builtin.service:
-        name: httpd
-        state: restarted
+      ansible.builtin.service: { name: httpd, state: restarted }

@@ -1,0 +1,64 @@
+---
+- name: Managed Reboot for Windows Servers with Cache Check
+  hosts: jp_windows
+  serial: 1 
+
+  tasks:
+    - name: Check for cached reboot requirement
+      ansible.builtin.set_fact:
+        effective_windows_reboot_needed: "{{ hostvars[inventory_hostname]['windows_reboot_needed'] | default(false) }}"
+
+    - name: Check Windows for live pending reboot if cache is false
+      ansible.windows.win_shell: |
+        $reboot = $false
+        $paths = @(
+            "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired",
+            "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending",
+            "HKLM:\SOFTWARE\Microsoft\ServerManager\CurrentRebootAttempts"
+        )
+        foreach ($path in $paths) { if (Test-Path $path) { $reboot = $true } }
+        return $reboot
+      register: live_reboot_check
+      when: not effective_windows_reboot_needed
+      changed_when: false
+
+    - name: Consolidate reboot decision
+      ansible.builtin.set_fact:
+        final_reboot_decision: "{{ effective_windows_reboot_needed or (live_reboot_check.stdout | default('false') | trim | bool) }}"
+
+    - name: Perform Windows Reboot
+      ansible.windows.win_reboot:
+        msg: "Rebooting Windows server via Ansible (Requirement found in Cache or OS)"
+        pre_reboot_delay: 0
+        post_reboot_delay: 30
+        reboot_timeout: 900
+        # This ensures the OS is responsive to basic commands before proceeding
+        test_command: 'whoami'
+      when: final_reboot_decision
+
+    - name: Wait for WinRM to be stable and system to be up
+      # This ensures the connection is persistent and not just a blip during boot
+      ansible.windows.win_wait_for_ng:
+        timeout: 300
+      when: final_reboot_decision
+
+    - name: Reset cached reboot flag after success
+      ansible.builtin.set_fact:
+        windows_reboot_needed: false
+        cacheable: yes
+      when: final_reboot_decision
+
+    - name: Final Verification
+      ansible.windows.win_powershell:
+        script: |
+          $uptime = (Get-CimInstance Win32_OperatingSystem).LastBootUpTime
+          return "Server is UP. Last Boot: $uptime"
+      register: boot_time
+      when: final_reboot_decision
+
+    - name: Display Status
+      ansible.builtin.debug:
+        msg: >
+          System: {{ inventory_hostname }} | 
+          Reboot Performed: {{ 'YES' if final_reboot_decision else 'NO' }} |
+          {{ boot_time.output[0] if final_reboot_decision else 'Uptime unchanged' }}

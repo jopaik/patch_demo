@@ -1,0 +1,54 @@
+---
+- name: Managed Reboot for RHEL Servers with Cache Check
+  hosts: jp_rhel
+  become: yes
+  serial: 1 
+
+  tasks:
+    - name: Check for cached reboot requirement
+      ansible.builtin.set_fact:
+        effective_reboot_required: "{{ hostvars[inventory_hostname]['reboot_required'] | default(false) }}"
+
+    - name: Check OS for live reboot requirement if cache is false
+      ansible.builtin.command: needs-restarting -r
+      register: live_reboot_check
+      failed_when: false
+      changed_when: false
+      when: not effective_reboot_required
+
+    - name: Consolidate reboot status
+      ansible.builtin.set_fact:
+        final_reboot_decision: "{{ effective_reboot_required or (live_reboot_check.rc | default(0) != 0) }}"
+
+    - name: Perform reboot if required
+      ansible.builtin.reboot:
+        msg: "Rebooting RHEL server via Ansible (Requirement found in Cache or OS)"
+        connect_timeout: 5
+        reboot_timeout: 600
+        # This is the primary check: Ansible won't move on until 'uptime' succeeds
+        test_command: uptime
+      when: final_reboot_decision
+
+    - name: Wait for server to be fully responsive
+      ansible.builtin.wait_for_connection:
+        delay: 10      # Wait 10 seconds before starting checks
+        timeout: 300   # Give up after 5 minutes
+      when: final_reboot_decision
+
+    - name: Verify server is back and get uptime
+      ansible.builtin.command: uptime
+      register: uptime_output
+      when: final_reboot_decision
+
+    - name: Clear cached reboot flag after successful restart
+      ansible.builtin.set_fact:
+        reboot_required: false
+        cacheable: yes
+      when: final_reboot_decision
+
+    - name: Display Final Status
+      ansible.builtin.debug:
+        msg: >
+          System: {{ inventory_hostname }} | 
+          Reboot Performed: {{ 'YES' if final_reboot_decision else 'NO' }} |
+          Current Uptime: {{ uptime_output.stdout | default('N/A') }}
