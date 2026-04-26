@@ -4,10 +4,9 @@
   become: no
   gather_facts: yes
   vars:
-    # Centralized lists for the audit
+    # Centralized variables at the play level for cross-play accessibility
     cve_advisory_ids: "{{ input_cve_ids | default(['RHSA-2026:8259', 'CVE-2026-33412']) }}"
     target_kb_ids: "{{ input_kb_ids | default(['KB4052623', 'KB2267602']) }}"
-    current_time: "{{ now(fmt='%Y-%m-%d_%H-%M-%S') }}"
 
   tasks:
     # --- RHEL AUDIT & DISCOVERY ---
@@ -43,7 +42,7 @@
     - name: Windows Audit Block
       when: ansible_os_family == "Windows"
       block:
-        - name: Discover ALL Missing Windows KBs
+        - name: Discover ALL Missing Windows KBs (WUA Agent)
           ansible.windows.win_updates:
             category_names: [SecurityUpdates, CriticalUpdates]
             state: searched
@@ -84,6 +83,11 @@
 - name: Phase 2 - Deploy Centralized Report Webserver
   hosts: jp_webserver
   become: yes
+  vars:
+    # Redeclare variables here or ensure they are passed globally to avoid Undefined errors
+    cve_advisory_ids: "{{ hostvars[groups['jp_rhel'] | first]['cve_advisory_ids'] | default(['None']) }}"
+    target_kb_ids: "{{ hostvars[groups['jp_windows'] | first]['target_kb_ids'] | default(['None']) }}"
+
   tasks:
     - name: Webserver Infrastructure Setup
       block:
