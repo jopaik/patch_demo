@@ -4,6 +4,7 @@
   become: no
   gather_facts: yes
   vars:
+    # Centralized lists for the audit
     cve_advisory_ids: "{{ input_cve_ids | default(['RHSA-2026:8259', 'CVE-2026-33412']) }}"
     target_kb_ids: "{{ input_kb_ids | default(['KB4052623', 'KB2267602']) }}"
     current_time: "{{ now(fmt='%Y-%m-%d_%H-%M-%S') }}"
@@ -42,7 +43,7 @@
     - name: Windows Audit Block
       when: ansible_os_family == "Windows"
       block:
-        - name: Discover ALL Missing Windows KBs (WUA Agent)
+        - name: Discover ALL Missing Windows KBs
           ansible.windows.win_updates:
             category_names: [SecurityUpdates, CriticalUpdates]
             state: searched
@@ -53,19 +54,10 @@
             $targetId = "{{ item }}".ToUpper().Replace("KB", "")
             $allMissing = @({{ win_all_check.updates | map(attribute='kb') | flatten | map('regex_replace', '^', "'") | map('regex_replace', '$', "'") | join(',') }})
             
-            # 1. Check if physically installed
             $installed = Get-HotFix | Where-Object { $_.HotFixID -match $targetId }
-            
-            # 2. Check if the Update Agent says it is actually needed
             $isNeeded = $allMissing -contains $targetId
 
-            if ($installed) {
-                exit 0 # Found: Compliant
-            } elseif (-not $isNeeded) {
-                exit 0 # Not found, but NOT needed (Superseded): Compliant
-            } else {
-                exit 1 # Not found and Windows says we NEED it: Vulnerable
-            }
+            if ($installed) { exit 0 } elseif (-not $isNeeded) { exit 0 } else { exit 1 }
           loop: "{{ target_kb_ids }}"
           register: win_target_check
           failed_when: false 
@@ -93,7 +85,7 @@
   hosts: jp_webserver
   become: yes
   tasks:
-    - name: Webserver Setup
+    - name: Webserver Infrastructure Setup
       block:
         - ansible.builtin.dnf: { name: httpd, state: present }
         - ansible.builtin.lineinfile: { path: /etc/httpd/conf/httpd.conf, regexp: '^Listen ', line: 'Listen 8080' }
@@ -110,26 +102,38 @@
               <title>Security Audit Report</title>
               <style>
                   body { font-family: 'Segoe UI', sans-serif; margin: 20px; background-color: #f8f9fa; }
-                  .container { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); width: 95%; margin: auto; }
+                  .container { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); width: 95%; margin: auto; }
+                  .scope-box { background: #e9ecef; padding: 15px; border-radius: 8px; margin-bottom: 20px; border-left: 5px solid #212529; }
+                  .scope-label { font-weight: bold; color: #495057; text-transform: uppercase; font-size: 12px; display: block; margin-bottom: 5px; }
+                  .scope-list { font-family: monospace; font-size: 14px; color: #343a40; }
                   table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 13px; }
-                  th, td { padding: 10px; text-align: left; border-bottom: 1px solid #eee; vertical-align: top; }
+                  th, td { padding: 12px; text-align: left; border-bottom: 1px solid #eee; vertical-align: top; }
                   th { background-color: #212529; color: white; text-transform: uppercase; }
-                  .VULNERABLE, .REBOOT-YES { color: #dc3545; font-weight: bold; background-color: #f8d7da; padding: 3px 6px; border-radius: 4px; }
-                  .COMPLIANT, .REBOOT-NO { color: #198754; font-weight: bold; background-color: #d1e7dd; padding: 3px 6px; border-radius: 4px; }
-                  .scroller { max-height: 80px; overflow-y: auto; font-size: 11px; color: #555; border: 1px solid #f0f0f0; padding: 5px; background: #fafafa; }
+                  .VULNERABLE, .REBOOT-YES { color: #dc3545; font-weight: bold; background-color: #f8d7da; padding: 3px 8px; border-radius: 4px; }
+                  .COMPLIANT, .REBOOT-NO { color: #198754; font-weight: bold; background-color: #d1e7dd; padding: 3px 8px; border-radius: 4px; }
+                  .scroller { max-height: 80px; overflow-y: auto; font-size: 11px; color: #666; border: 1px solid #f0f0f0; padding: 5px; background: #fafafa; }
               </style>
           </head>
           <body>
               <div class="container">
                   <h1>Infrastructure Security Dashboard</h1>
-                  <p>Last Audit: {{ now(fmt='%Y-%m-%d %H:%M:%S') }}</p>
+                  <p><strong>Audit Timestamp:</strong> {{ now(fmt='%Y-%m-%d %H:%M:%S') }}</p>
+                  
+                  <div class="scope-box">
+                      <span class="scope-label">Targets Under Review:</span>
+                      <div class="scope-list">
+                          <strong>RHEL Advisories:</strong> {{ cve_advisory_ids | join(', ') }}<br>
+                          <strong>Windows KBs:</strong> {{ target_kb_ids | join(', ') }}
+                      </div>
+                  </div>
+
                   <table>
                       <tr>
-                          <th>Host</th>
+                          <th>Host Information</th>
                           <th>Target Status</th>
                           <th>Reboot</th>
                           <th>Missing Targeted</th>
-                          <th>Total Available Patches (Full System Scan)</th>
+                          <th>Full System Vulnerabilities</th>
                       </tr>
                       {% for host in groups['all'] %}
                       {% if hostvars[host]['compliance_status'] is defined %}
