@@ -4,11 +4,17 @@
   become: no
   gather_facts: yes
   vars:
-    # Centralized variables at the play level for cross-play accessibility
+    # These are the default targets if no extra vars are passed
     cve_advisory_ids: "{{ input_cve_ids | default(['RHSA-2026:8259', 'CVE-2026-33412']) }}"
     target_kb_ids: "{{ input_kb_ids | default(['KB4052623', 'KB2267602']) }}"
 
   tasks:
+    - name: Save Audit IDs as Facts for Web Reporting
+      ansible.builtin.set_fact:
+        global_cve_ids: "{{ cve_advisory_ids }}"
+        global_kb_ids: "{{ target_kb_ids }}"
+      # This ensures these variables stay attached to the host for Phase 2
+
     # --- RHEL AUDIT & DISCOVERY ---
     - name: RHEL Audit Block
       when: ansible_os_family == "RedHat"
@@ -80,16 +86,14 @@
             reboot_pending: "{{ 'YES' if win_reboot_check.stdout | trim == 'True' else 'NO' }}"
             target_id_list: "{{ target_kb_ids | join(', ') }}"
 
+# ==========================================
+# PHASE 2: GENERATE REPORT
+# ==========================================
 - name: Phase 2 - Deploy Centralized Report Webserver
   hosts: jp_webserver
   become: yes
-  vars:
-    # Redeclare variables here or ensure they are passed globally to avoid Undefined errors
-    cve_advisory_ids: "{{ hostvars[groups['jp_rhel'] | first]['cve_advisory_ids'] | default(['None']) }}"
-    target_kb_ids: "{{ hostvars[groups['jp_windows'] | first]['target_kb_ids'] | default(['None']) }}"
-
   tasks:
-    - name: Webserver Infrastructure Setup
+    - name: Webserver Setup
       block:
         - ansible.builtin.dnf: { name: httpd, state: present }
         - ansible.builtin.lineinfile: { path: /etc/httpd/conf/httpd.conf, regexp: '^Listen ', line: 'Listen 8080' }
@@ -109,7 +113,7 @@
                   .container { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); width: 95%; margin: auto; }
                   .scope-box { background: #e9ecef; padding: 15px; border-radius: 8px; margin-bottom: 20px; border-left: 5px solid #212529; }
                   .scope-label { font-weight: bold; color: #495057; text-transform: uppercase; font-size: 12px; display: block; margin-bottom: 5px; }
-                  .scope-list { font-family: monospace; font-size: 14px; color: #343a40; }
+                  .scope-list { font-family: monospace; font-size: 14px; color: #343a40; line-height: 1.6; }
                   table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 13px; }
                   th, td { padding: 12px; text-align: left; border-bottom: 1px solid #eee; vertical-align: top; }
                   th { background-color: #212529; color: white; text-transform: uppercase; }
@@ -126,8 +130,15 @@
                   <div class="scope-box">
                       <span class="scope-label">Targets Under Review:</span>
                       <div class="scope-list">
-                          <strong>RHEL Advisories:</strong> {{ cve_advisory_ids | join(', ') }}<br>
-                          <strong>Windows KBs:</strong> {{ target_kb_ids | join(', ') }}
+                          {# Use the global facts saved on the audited hosts #}
+                          {% set rhel_node = groups['jp_rhel'] | first if groups['jp_rhel'] is defined else none %}
+                          {% set win_node = groups['jp_windows'] | first if groups['jp_windows'] is defined else none %}
+                          
+                          <strong>RHEL Advisories:</strong> 
+                          {{ hostvars[rhel_node]['global_cve_ids'] | join(', ') if rhel_node and hostvars[rhel_node]['global_cve_ids'] is defined else 'N/A' }}<br>
+                          
+                          <strong>Windows KBs:</strong> 
+                          {{ hostvars[win_node]['global_kb_ids'] | join(', ') if win_node and hostvars[win_node]['global_kb_ids'] is defined else 'N/A' }}
                       </div>
                   </div>
 
