@@ -1,0 +1,46 @@
+---
+- name: Pre-Check Patch Applicability - Windows
+  hosts: jp_windows
+  gather_facts: yes
+
+  vars:
+    target_kb_ids: "{{ input_kb_ids | default(['KB4052623', 'KB2267602']) }}"
+
+  tasks:
+    - name: Discover available updates from Windows Update Agent
+      ansible.windows.win_updates:
+        category_names: [SecurityUpdates, CriticalUpdates]
+        state: searched
+      register: win_all_check
+
+    - name: Check Targeted KBs against Installation and Applicability
+      ansible.windows.win_shell: |
+        $targetId = "{{ item }}".ToUpper().Replace("KB", "")
+        $allMissing = @({{ win_all_check.updates | map(attribute='kb') | flatten | map('regex_replace', '^', "'") | map('regex_replace', '$', "'") | join(',') }})
+        
+        $installed = Get-HotFix | Where-Object { $_.HotFixID -match $targetId }
+        $isNeeded = $allMissing -contains $targetId
+
+        if ($installed -or (-not $isNeeded)) { exit 0 } else { exit 1 }
+      loop: "{{ target_kb_ids }}"
+      register: win_checks
+      failed_when: false
+      changed_when: false
+
+    - name: Identify which Windows KBs are truly missing
+      ansible.builtin.set_fact:
+        missing_patches: >-
+          [{% for result in win_checks.results if result.rc != 0 %}
+            "{{ result.item }}"{{ "," if not loop.last else "" }}
+          {% endfor %}]
+
+    - name: Set Windows status fact
+      ansible.builtin.set_fact:
+        patch_needed: "{{ missing_patches | length > 0 }}"
+
+    - name: Summary of Windows Pre-Check
+      ansible.builtin.debug:
+        msg: >
+          System: {{ inventory_hostname }} | 
+          Missing Items: {{ missing_patches | join(', ') if missing_patches else 'None' }} | 
+          Execution Recommended: {{ 'YES' if patch_needed else 'NO (System Compliant)' }}

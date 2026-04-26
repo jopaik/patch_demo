@@ -1,0 +1,29 @@
+---
+- name: Pre-Check Patch Applicability - RHEL
+  hosts: jp_rhel
+  become: yes
+  gather_facts: yes
+
+  vars:
+    cve_advisory_ids: "{{ input_cve_ids | default(['RHSA-2026:8259', 'CVE-2026-33412']) }}"
+
+  tasks:
+    - name: Query DNF for targeted advisories
+      ansible.builtin.command: "dnf updateinfo list --advisory {{ cve_advisory_ids | join(' ') }}"
+      register: rhel_check
+      changed_when: false
+
+    - name: Identify missing RHEL advisories
+      ansible.builtin.set_fact:
+        missing_patches: "{{ cve_advisory_ids | select('in', rhel_check.stdout) | list }}"
+
+    - name: Set RHEL status fact
+      ansible.builtin.set_fact:
+        patch_needed: "{{ missing_patches | length > 0 }}"
+
+    - name: Summary of RHEL Pre-Check
+      ansible.builtin.debug:
+        msg: >
+          System: {{ inventory_hostname }} | 
+          Missing Items: {{ missing_patches | join(', ') if missing_patches else 'None' }} | 
+          Execution Recommended: {{ 'YES' if patch_needed else 'NO (System Compliant)' }}

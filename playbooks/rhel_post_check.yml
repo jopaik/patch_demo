@@ -1,0 +1,31 @@
+---
+- name: Post-Check Patch Verification - RHEL
+  hosts: jp_rhel
+  become: yes
+  gather_facts: yes
+
+  vars:
+    cve_advisory_ids: "{{ input_cve_ids | default(['RHSA-2026:8259', 'CVE-2026-33412']) }}"
+
+  tasks:
+    - name: Query DNF for targeted advisories after patching
+      ansible.builtin.command: "dnf updateinfo list --advisory {{ cve_advisory_ids | join(' ') }}"
+      register: rhel_post_check
+      changed_when: false
+
+    - name: Identify any remaining RHEL advisories
+      ansible.builtin.set_fact:
+        remaining_patches: "{{ cve_advisory_ids | select('in', rhel_post_check.stdout) | list }}"
+
+    - name: Determine RHEL compliance status
+      ansible.builtin.set_fact:
+        is_compliant: "{{ remaining_patches | length == 0 }}"
+
+    - name: Summary of RHEL Post-Check
+      ansible.builtin.debug:
+        msg: >
+          System: {{ inventory_hostname }} | 
+          Status: {{ 'COMPLIANT' if is_compliant else 'NON-COMPLIANT' }} | 
+          Remaining Issues: {{ remaining_patches | join(', ') if remaining_patches else 'None' }}
+      # This forces the AAP job to fail if patches are still missing
+      failed_when: not is_compliant

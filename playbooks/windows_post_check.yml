@@ -1,0 +1,48 @@
+---
+- name: Post-Check Patch Verification - Windows
+  hosts: jp_windows
+  gather_facts: yes
+
+  vars:
+    target_kb_ids: "{{ input_kb_ids | default(['KB4052623', 'KB2267602']) }}"
+
+  tasks:
+    - name: Search WUA for remaining applicable updates
+      ansible.windows.win_updates:
+        category_names: [SecurityUpdates, CriticalUpdates]
+        state: searched
+      register: win_post_search
+
+    - name: Verify Targeted KBs are resolved (Installed or Superseded)
+      ansible.windows.win_shell: |
+        $targetId = "{{ item }}".ToUpper().Replace("KB", "")
+        $allMissing = @({{ win_post_search.updates | map(attribute='kb') | flatten | map('regex_replace', '^', "'") | map('regex_replace', '$', "'") | join(',') }})
+        
+        $installed = Get-HotFix | Where-Object { $_.HotFixID -match $targetId }
+        $isNeeded = $allMissing -contains $targetId
+
+        if ($installed -or (-not $isNeeded)) { exit 0 } else { exit 1 }
+      loop: "{{ target_kb_ids }}"
+      register: win_post_checks
+      failed_when: false
+      changed_when: false
+
+    - name: Identify any remaining Windows KBs
+      ansible.builtin.set_fact:
+        remaining_patches: >-
+          [{% for result in win_post_checks.results if result.rc != 0 %}
+            "{{ result.item }}"{{ "," if not loop.last else "" }}
+          {% endfor %}]
+
+    - name: Determine Windows compliance status
+      ansible.builtin.set_fact:
+        is_compliant: "{{ remaining_patches | length == 0 }}"
+
+    - name: Summary of Windows Post-Check
+      ansible.builtin.debug:
+        msg: >
+          System: {{ inventory_hostname }} | 
+          Status: {{ 'COMPLIANT' if is_compliant else 'NON-COMPLIANT' }} | 
+          Remaining Issues: {{ remaining_patches | join(', ') if remaining_patches else 'None' }}
+      # This forces the AAP job to fail if patches are still missing
+      failed_when: not is_compliant
