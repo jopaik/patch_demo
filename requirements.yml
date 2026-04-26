@@ -1,0 +1,20 @@
+---
+# Collections provide the underlying modules and official RHEL system roles
+collections:
+  - name: ansible.windows
+  - name: community.windows
+  - name: redhat.rhel_system_roles
+
+# Roles provide the specific CIS logic
+roles:
+  # Windows CIS Lockdown (Remediation & Audit)
+  - name: ansible-lockdown.Windows-2019-CIS
+  - name: ansible-lockdown.Windows-2022-CIS
+
+  # RHEL CIS Lockdown (Remediation & Audit)
+  - name: ansible-lockdown.rhel8_cis
+  - name: ansible-lockdown.rhel9_cis
+
+  # MindPoint Group CIS Audit (Strictly for Reporting)
+  - name: mindpointgroup.rhel8_cis_audit
+  - name: mindpointgroup.rhel9_cis_audit
