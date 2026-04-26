@@ -42,19 +42,34 @@
     - name: Windows Audit Block
       when: ansible_os_family == "Windows"
       block:
-        - name: Check Windows for Targeted KBs
-          ansible.windows.win_shell: |
-            if (Get-HotFix -Id {{ item }} -ErrorAction SilentlyContinue) { exit 0 } else { exit 1 }
-          loop: "{{ target_kb_ids }}"
-          register: win_target_check
-          failed_when: false 
-          changed_when: false
-
-        - name: Discover ALL Missing Windows KBs
+        - name: Discover ALL Missing Windows KBs (WUA Agent)
           ansible.windows.win_updates:
             category_names: [SecurityUpdates, CriticalUpdates]
             state: searched
           register: win_all_check
+
+        - name: Check Windows for Targeted KBs (Smart Logic)
+          ansible.windows.win_shell: |
+            $targetId = "{{ item }}".ToUpper().Replace("KB", "")
+            $allMissing = @({{ win_all_check.updates | map(attribute='kb') | flatten | map('regex_replace', '^', "'") | map('regex_replace', '$', "'") | join(',') }})
+            
+            # 1. Check if physically installed
+            $installed = Get-HotFix | Where-Object { $_.HotFixID -match $targetId }
+            
+            # 2. Check if the Update Agent says it is actually needed
+            $isNeeded = $allMissing -contains $targetId
+
+            if ($installed) {
+                exit 0 # Found: Compliant
+            } elseif (-not $isNeeded) {
+                exit 0 # Not found, but NOT needed (Superseded): Compliant
+            } else {
+                exit 1 # Not found and Windows says we NEED it: Vulnerable
+            }
+          loop: "{{ target_kb_ids }}"
+          register: win_target_check
+          failed_when: false 
+          changed_when: false
 
         - name: Check Windows Reboot Status
           ansible.windows.win_shell: |
@@ -78,7 +93,7 @@
   hosts: jp_webserver
   become: yes
   tasks:
-    - name: Ensure Apache is Running
+    - name: Webserver Setup
       block:
         - ansible.builtin.dnf: { name: httpd, state: present }
         - ansible.builtin.lineinfile: { path: /etc/httpd/conf/httpd.conf, regexp: '^Listen ', line: 'Listen 8080' }
@@ -92,7 +107,7 @@
           <!DOCTYPE html>
           <html>
           <head>
-              <title>Security Patch Audit Report</title>
+              <title>Security Audit Report</title>
               <style>
                   body { font-family: 'Segoe UI', sans-serif; margin: 20px; background-color: #f8f9fa; }
                   .container { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); width: 95%; margin: auto; }
@@ -101,7 +116,7 @@
                   th { background-color: #212529; color: white; text-transform: uppercase; }
                   .VULNERABLE, .REBOOT-YES { color: #dc3545; font-weight: bold; background-color: #f8d7da; padding: 3px 6px; border-radius: 4px; }
                   .COMPLIANT, .REBOOT-NO { color: #198754; font-weight: bold; background-color: #d1e7dd; padding: 3px 6px; border-radius: 4px; }
-                  .scroller { max-height: 100px; overflow-y: auto; display: block; font-size: 11px; color: #555; border: 1px solid #f0f0f0; padding: 5px; }
+                  .scroller { max-height: 80px; overflow-y: auto; font-size: 11px; color: #555; border: 1px solid #f0f0f0; padding: 5px; background: #fafafa; }
               </style>
           </head>
           <body>
@@ -114,7 +129,7 @@
                           <th>Target Status</th>
                           <th>Reboot</th>
                           <th>Missing Targeted</th>
-                          <th>Total Unpatched (Full List)</th>
+                          <th>Total Available Patches (Full System Scan)</th>
                       </tr>
                       {% for host in groups['all'] %}
                       {% if hostvars[host]['compliance_status'] is defined %}
@@ -136,8 +151,8 @@
           </body>
           </html>
         mode: '0644'
-      notify: Restart Apache Service
+      notify: Restart Apache
 
   handlers:
-    - name: Restart Apache Service
+    - name: Restart Apache
       ansible.builtin.service: { name: httpd, state: restarted }
