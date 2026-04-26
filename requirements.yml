@@ -1,20 +1,26 @@
 ---
-# Collections provide the underlying modules and official RHEL system roles
 collections:
   - name: ansible.windows
   - name: community.windows
   - name: redhat.rhel_system_roles
 
-# Roles provide the specific CIS logic
 roles:
-  # Windows CIS Lockdown (Remediation & Audit)
+  # Using the direct HTTPS source bypasses Galaxy search issues
   - name: ansible-lockdown.Windows-2019-CIS
+    src: https://github.com/ansible-lockdown/Windows-2019-CIS
+    scm: git
+
   - name: ansible-lockdown.Windows-2022-CIS
+    src: https://github.com/ansible-lockdown/Windows-2022-CIS
+    scm: git
 
-  # RHEL CIS Lockdown (Remediation & Audit)
   - name: ansible-lockdown.rhel8_cis
-  - name: ansible-lockdown.rhel9_cis
+    src: https://github.com/ansible-lockdown/rhel8_cis
+    scm: git
 
-  # MindPoint Group CIS Audit (Strictly for Reporting)
+  - name: ansible-lockdown.rhel9_cis
+    src: https://github.com/ansible-lockdown/rhel9_cis
+    scm: git
+
   - name: mindpointgroup.rhel8_cis_audit
   - name: mindpointgroup.rhel9_cis_audit
