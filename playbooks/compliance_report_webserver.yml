@@ -13,7 +13,6 @@
       ansible.builtin.set_fact:
         global_cve_ids: "{{ cve_advisory_ids }}"
         global_kb_ids: "{{ target_kb_ids }}"
-      # This ensures these variables stay attached to the host for Phase 2
 
     # --- RHEL AUDIT & DISCOVERY ---
     - name: RHEL Audit Block
@@ -87,18 +86,41 @@
             target_id_list: "{{ target_kb_ids | join(', ') }}"
 
 # ==========================================
-# PHASE 2: GENERATE REPORT
+# PHASE 2: GENERATE REPORT WITH CONFLICT FIXES
 # ==========================================
 - name: Phase 2 - Deploy Centralized Report Webserver
   hosts: jp_webserver
   become: yes
   tasks:
-    - name: Webserver Setup
+    - name: Webserver Setup & Conflict Resolution
       block:
-        - ansible.builtin.dnf: { name: httpd, state: present }
-        - ansible.builtin.lineinfile: { path: /etc/httpd/conf/httpd.conf, regexp: '^Listen ', line: 'Listen 8080' }
-        - ansible.posix.firewalld: { port: 8080/tcp, permanent: yes, state: enabled, immediate: yes }
-        - ansible.builtin.service: { name: httpd, state: started, enabled: yes }
+        - name: Disable SELinux (Immediate and Persistent)
+          block:
+            - ansible.builtin.selinux: { state: disabled }
+            - ansible.builtin.command: setenforce 0
+          failed_when: false
+
+        - name: Install Apache
+          ansible.builtin.dnf: { name: httpd, state: present }
+
+        - name: Resolve Port Conflict - Scrub default Listen 80
+          ansible.builtin.replace:
+            path: /etc/httpd/conf/httpd.conf
+            regexp: '^Listen .*'
+            replace: '# Listen removed by Ansible'
+
+        - name: Configure custom Listen port 8080
+          ansible.builtin.copy:
+            dest: /etc/httpd/conf.d/ports.conf
+            content: |
+              # Port configuration for Security Dashboard
+              Listen 8080
+
+        - name: Open Firewall Port 8080
+          ansible.posix.firewalld: { port: 8080/tcp, permanent: yes, state: enabled, immediate: yes }
+
+        - name: Ensure Apache is started and enabled
+          ansible.builtin.service: { name: httpd, state: started, enabled: yes }
 
     - name: Generate HTML Compliance Report
       ansible.builtin.copy:
@@ -130,7 +152,6 @@
                   <div class="scope-box">
                       <span class="scope-label">Targets Under Review:</span>
                       <div class="scope-list">
-                          {# Use the global facts saved on the audited hosts #}
                           {% set rhel_node = groups['jp_rhel'] | first if groups['jp_rhel'] is defined else none %}
                           {% set win_node = groups['jp_windows'] | first if groups['jp_windows'] is defined else none %}
                           
