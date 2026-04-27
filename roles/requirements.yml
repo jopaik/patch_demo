@@ -9,11 +9,6 @@ roles:
     src: https://github.com/ansible-lockdown/Windows-2022-CIS
     scm: git
 
-  # --- RHEL CIS Roles (Direct Git Source) ---
-  - name: ansible-lockdown.rhel8_cis
-    src: https://github.com/ansible-lockdown/rhel8_cis
-    scm: git
-
   - name: ansible-lockdown.rhel9_cis
     src: https://github.com/ansible-lockdown/rhel9_cis
     scm: git
