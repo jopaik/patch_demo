@@ -1,6 +1,6 @@
 ---
 - name: Windows 2019 CIS Audit & Local Web Hosting
-  hosts: windows_2019_servers
+  hosts: joon-win2019
   become: no
   gather_facts: yes
   vars:
