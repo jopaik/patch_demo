@@ -8,7 +8,20 @@
     setup_audit: true
     run_audit: true
     remediate: false
-    win2019cis_skip_list: ["18.5.7"]
+    win2019cis_skip_list:
+      # Network stack resets
+      - "18.5.7"
+      - "18.5.10"
+      - "18.5.11"
+      - "18.5.12"
+      - "18.5.4"
+      # UAC / Session resets
+      - "2.3.17.4"
+      - "2.3.17.1"
+      - "2.3.17.3"
+      # Potential WinRM interference
+      - "18.9.102.1.1"
+      - "18.9.102.1.2"
 
     # --- THE FIX: Role-Specific Output Variables ---
     # These force the role to generate the physical file you need.
