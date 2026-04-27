@@ -33,7 +33,7 @@
 
     - name: Execute Surgical CIS Remediation
       ansible.builtin.include_role:
-        name: rhel9_cis
+        name: ansible-lockdown.rhel9_cis
 
     - name: Fetch Results
       ansible.builtin.fetch:

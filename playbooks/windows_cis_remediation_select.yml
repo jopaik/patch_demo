@@ -1,0 +1,41 @@
+---
+- name: Surgical Windows 2019 CIS Remediation
+  hosts: joon-win2019
+  gather_facts: yes
+  vars:
+    # 1. DEFINE YOUR SELECTED RULES HERE
+    # Use the exact Rule IDs from the CIS Benchmark
+    selected_rules:
+      - "1.1.1"
+      - "2.3.1.1"
+
+    # 2. ROLE SETTINGS
+    setup_audit: true
+    run_audit: true
+    remediate: true  # This enables actual changes
+    
+    # 3. DISABLE ALL SECTIONS BY DEFAULT
+    # This prevents the role from running rules you didn't select
+    win2019cis_section1: false
+    win2019cis_section2: false
+    win2019cis_section3: false
+    win2019cis_section4: false
+    win2019cis_section5: false
+    win2019cis_section6: false
+    win2019cis_section7: false
+    win2019cis_section8: false
+    win2019cis_section9: false
+
+  tasks:
+    - name: Dynamically Enable Selected CIS Rules
+      ansible.builtin.set_fact:
+        "win2019cis_rule_{{ item | replace('.', '_') }}": true
+      loop: "{{ selected_rules }}"
+
+    - name: Execute Targeted Windows CIS Remediation
+      ansible.builtin.include_role:
+        name: ansible-lockdown.windows_2019_cis
+
+    - name: Display Completion Summary
+      ansible.builtin.debug:
+        msg: "Surgical remediation complete for rules: {{ selected_rules | join(', ') }}"
