@@ -23,6 +23,7 @@
       - "2.2.3"    # Deny log on through Remote Desktop Services
       - "2.2.34"   # Log on as a service (Ensures Ansible svc account isn't kicked)
       - "2.3.1.1"  # Accounts: Block Microsoft accounts
+      - "2.3.10.1" # Network access: Do not allow storage of passwords and credentials for network authentication
       - "2.3.10.2" # Network access: Do not allow storage of passwords/credentials
       - "2.3.11.8" # Network security: Force logoff when logon hours expire
       # 4. WinRM & Shell Killers
