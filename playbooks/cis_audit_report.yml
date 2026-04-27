@@ -1,20 +1,21 @@
 ---
-- name: Phase 1 - Audit Targeted Patches & CIS Benchmarks
+- name: Phase 1 - Audit Patches, CIS Benchmarks, and Collect Existing Reports
   hosts: jp_rhel, jp_windows
   become: no
   gather_facts: yes
   vars:
     cve_advisory_ids: "{{ input_cve_ids | default(['RHSA-2026:8259', 'CVE-2026-33412']) }}"
     target_kb_ids: "{{ input_kb_ids | default(['KB4052623', 'KB2267602']) }}"
-    local_audit_dir: "./audit_reports"
+    # Absolute path on the AAP controller to store files temporarily
+    local_audit_dir: "/runner/project/audit_reports"
 
   tasks:
-    - name: Save Audit IDs as Facts for Web Reporting
+    - name: Save Audit IDs as Facts
       ansible.builtin.set_fact:
         global_cve_ids: "{{ cve_advisory_ids }}"
         global_kb_ids: "{{ target_kb_ids }}"
 
-    # --- RHEL AUDIT & CIS SCAN ---
+    # --- RHEL AUDIT & FETCH ---
     - name: RHEL Audit Block
       when: ansible_os_family == "RedHat"
       become: yes
@@ -37,23 +38,22 @@
 
         - name: Run RHEL 9 CIS Audit Role
           ansible.builtin.include_role:
-            name: ansible-lockdown.rhel9_cis
+            name: rhel9_cis
           vars:
             rhel9_cis_setup_audit: true
             rhel9_cis_run_audit: true
             rhel9_cis_remediate: false
-            # Fix for the 'authselect' assertion error
             rhel9cis_authselect_custom_profile_name: "cis_hardened_profile"
           when: ansible_distribution_major_version == "9"
 
-        - name: Fetch RHEL CIS Report to Controller
+        - name: Fetch existing .audit_report directory (RHEL)
           ansible.builtin.fetch:
-            src: "/var/tmp/rhel9-cis-report.html"
-            dest: "{{ local_audit_dir }}/{{ inventory_hostname }}/index.html"
-            flat: yes
+            src: "/root/.audit_report/"
+            dest: "{{ local_audit_dir }}/{{ inventory_hostname }}/"
+            flat: no
           failed_when: false
 
-    # --- WINDOWS AUDIT & CIS SCAN ---
+    # --- WINDOWS AUDIT & FETCH ---
     - name: Windows Audit Block
       when: ansible_os_family == "Windows"
       block:
@@ -63,10 +63,10 @@
             state: searched
           register: win_all_check
 
-        - name: Check Windows for Targeted KBs (Smart Logic)
+        - name: Check Windows for Targeted KBs
           ansible.windows.win_shell: |
             $targetId = "{{ item }}".ToUpper().Replace("KB", "")
-            $allMissing = @({{ win_all_check.updates | map(attribute='kb') | flatten | map('regex_replace', '^', "'") | map('regex_replace', '$', "'") | join(',') }})
+            $allMissing = @({{ win_all_check.updates | default([]) | map(attribute='kb') | flatten | map('regex_replace', '^', "'") | map('regex_replace', '$', "'") | join(',') }})
             $installed = Get-HotFix | Where-Object { $_.HotFixID -match $targetId }
             if ($installed -or ($allMissing -notcontains $targetId)) { exit 0 } else { exit 1 }
           loop: "{{ target_kb_ids }}"
@@ -74,170 +74,142 @@
           failed_when: false 
 
         - name: Check Windows Reboot Status
-          ansible.windows.win_shell: |
-            $reboot = $false
-            $paths = @("HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired","HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending")
-            foreach ($p in $paths) { if (Test-Path $p) { $reboot = $true } }
-            return $reboot
+          ansible.windows.win_shell: "return (Test-Path HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\WindowsUpdate\\Auto Update\\RebootRequired)"
           register: win_reboot_check
           failed_when: false
 
         - name: Run Windows 2019 CIS Audit Role
           ansible.builtin.include_role:
-            name: ansible-lockdown.windows_2019_cis
+            name: Windows-2019-CIS
           vars:
             setup_audit: true
             run_audit: true
             remediate: false
-          # Fixed: Using 'in' operator instead of 'contains'
-          when: ansible_distribution is search("2019")
+          when: "'2019' in ansible_distribution"
 
-        - name: Find Windows CIS Report
-          ansible.windows.win_find:
-            paths: "C:\\cis_audit_results"
-            patterns: "*.html"
-          register: win_cis_files
-
-        - name: Fetch Windows CIS Report to Controller
+        - name: Fetch existing .audit_report directory (Windows)
           ansible.builtin.fetch:
-            src: "{{ item.path }}"
-            dest: "{{ local_audit_dir }}/{{ inventory_hostname }}/index.html"
-            flat: yes
-          loop: "{{ win_cis_files.files }}"
+            src: "C:/Users/Administrator/.audit_report/"
+            dest: "{{ local_audit_dir }}/{{ inventory_hostname }}/"
+            flat: no
+          failed_when: false
 
+    # --- DATA CONSOLIDATION ---
     - name: Set Universal Compliance Facts
       ansible.builtin.set_fact:
-        # Use default('') to prevent 'stdout' undefined errors if a check was skipped
         missing_targets: >-
           {{ rhel_target_check.stdout_lines | default([]) if ansible_os_family == 'RedHat' 
              else win_target_check.results | default([]) | selectattr('rc', 'defined') | selectattr('rc', 'ne', 0) | map(attribute='item') | list }}
-        
         all_unpatched: >-
           {{ rhel_all_check.stdout_lines | default([]) if ansible_os_family == 'RedHat' 
              else win_all_check.updates | default([]) | map(attribute='kb') | flatten | list }}
-        
         compliance_status: >-
           {{ 'VULNERABLE' if (
             (rhel_target_check.stdout | default('') != '') or 
             (win_target_check.results | default([]) | selectattr('rc', 'defined') | selectattr('rc', 'ne', 0) | list | length > 0)
           ) else 'COMPLIANT' }}
-        
         reboot_pending: >-
           {{ 'YES' if (
             (rhel_reboot_check.rc | default(0) != 0) or 
             (win_reboot_check.stdout | default('') | trim == 'True')
           ) else 'NO' }}
+
 # ==========================================
-# PHASE 2: GENERATE CONSOLIDATED REPORTS
+# PHASE 2: DEPLOY TO WEBSERVER
 # ==========================================
 - name: Phase 2 - Deploy Centralized Report Webserver
   hosts: jp_webserver
   become: yes
   vars:
-    # Add this here so it's available to tasks in this play
-    local_audit_dir: "./audit_reports"
+    local_audit_dir: "/runner/project/audit_reports"
+    web_root_compliance: "/var/www/compliance"
+
   tasks:
     - name: Webserver Setup
       block:
         - name: Install Apache
-          ansible.builtin.dnf:
-            name: httpd
-            state: present
-
+          ansible.builtin.dnf: { name: httpd, state: present }
         - name: Configure Ports 8080 and 8081
           ansible.builtin.copy:
             dest: /etc/httpd/conf.d/ports.conf
             content: |
               Listen 8080
               Listen 8081
-
         - name: Open Firewall Ports
           ansible.posix.firewalld:
             port: "{{ item }}/tcp"
             permanent: yes
             state: enabled
             immediate: yes
-          loop:
-            - 8080
-            - 8081
+          loop: [8080, 8081]
+        - name: Start Apache
+          ansible.builtin.service: { name: httpd, state: started, enabled: yes }
 
-        - name: Start Apache Service
-          ansible.builtin.service:
-            name: httpd
-            state: started
-            enabled: yes
-
-    - name: Prepare CIS Compliance Directory
+    - name: Prepare Compliance Web Directory
       ansible.builtin.file:
-        path: /var/www/compliance
+        path: "{{ web_root_compliance }}"
         state: directory
         mode: '0755'
 
-    - name: Upload CIS Audit Reports to Webserver
+    - name: Verify Audit Reports Exist on Controller
+      delegate_to: localhost
+      become: no
+      ansible.builtin.stat:
+        path: "{{ local_audit_dir }}"
+      register: audit_stats
+
+    - name: Upload Fetched Audit Reports to Webserver
       ansible.builtin.copy:
         src: "{{ local_audit_dir }}/"
-        dest: "/var/www/compliance/"
+        dest: "{{ web_root_compliance }}/"
         mode: '0644'
+      when: audit_stats.stat.exists
 
-    - name: Generate Patch Dashboard (8080)
+    - name: Generate Infrastructure Dashboard (8080)
       ansible.builtin.copy:
         dest: "/var/www/html/index.html"
         content: |
           <!DOCTYPE html>
           <html>
-          <head>
-              <title>Infrastructure Dashboard</title>
-              <style>
-                  body { font-family: sans-serif; margin: 20px; background: #f4f4f4; }
-                  .container { background: white; padding: 20px; border-radius: 8px; }
-                  table { width: 100%; border-collapse: collapse; }
-                  th, td { padding: 10px; border: 1px solid #ddd; text-align: left; }
-                  th { background: #333; color: white; }
-                  .VULNERABLE { color: #d9534f; font-weight: bold; }
-                  .COMPLIANT { color: #5cb85c; font-weight: bold; }
-              </style>
-          </head>
-          <body>
-              <div class="container">
-                  <h1>Infrastructure Patching Dashboard (8080)</h1>
-                  <table>
-                      <tr>
-                          <th>Host</th>
-                          <th>Status</th>
-                          <th>Reboot Required</th>
-                          <th>CIS Audit Link</th>
-                      </tr>
-                      {% for host in groups['all'] %}
-                      {% if hostvars[host]['compliance_status'] is defined %}
-                      <tr>
-                          <td>{{ host }}</td>
-                          <td><span class="{{ hostvars[host]['compliance_status'] }}">{{ hostvars[host]['compliance_status'] }}</span></td>
-                          <td>{{ hostvars[host]['reboot_pending'] }}</td>
-                          <td><a href="http://{{ ansible_host }}:8081/{{ host }}/index.html">View Detailed Audit</a></td>
-                      </tr>
-                      {% endif %}
-                      {% endfor %}
-                  </table>
-              </div>
+          <body style="font-family: sans-serif; padding: 20px;">
+              <h1>Infrastructure Patching Dashboard (8080)</h1>
+              <table border="1" cellpadding="10" style="border-collapse: collapse; width: 100%;">
+                  <tr style="background: #eee;">
+                      <th>Host</th><th>Status</th><th>Reboot</th><th>Audit Link</th>
+                  </tr>
+                  {% for host in groups['all'] %}
+                  {% if hostvars[host]['compliance_status'] is defined %}
+                  <tr>
+                      <td>{{ host }}</td>
+                      <td style="color: {{ 'red' if hostvars[host]['compliance_status'] == 'VULNERABLE' else 'green' }};">
+                          {{ hostvars[host]['compliance_status'] }}
+                      </td>
+                      <td>{{ hostvars[host]['reboot_pending'] }}</td>
+                      <td><a href="http://{{ ansible_host }}:8081/{{ host }}/">Browse Audit Files</a></td>
+                  </tr>
+                  {% endif %}
+                  {% endfor %}
+              </table>
           </body>
           </html>
 
     - name: Generate CIS Master Index (8081)
       ansible.builtin.copy:
-        dest: "/var/www/compliance/index.html"
+        dest: "{{ web_root_compliance }}/index.html"
         content: |
           <html><body style="font-family:sans-serif; background:#2c3e50; color:white; padding:50px;">
           <div style="background:white; color:#333; padding:30px; border-radius:10px; max-width:800px; margin:auto;">
           <h1>CIS Security Portal (8081)</h1>
+          <p>The following hosts have audit data available:</p>
           <hr>
           {% for host in groups['all'] %}
-          <a href="/{{ host }}/index.html" style="display:block; padding:10px; margin:5px; background:#eee; color:#2980b9; text-decoration:none;">{{ host }} - Full Security Report</a>
+          <a href="/{{ host }}/" style="display:block; padding:10px; margin:5px; background:#eee; color:#2980b9; text-decoration:none;">
+            {{ host }} - Security Findings
+          </a>
           {% endfor %}
           </div></body></html>
       notify: Restart Apache
 
   handlers:
     - name: Restart Apache
-      ansible.builtin.service:
-        name: httpd
-        state: restarted
+      ansible.builtin.service: { name: httpd, state: restarted }
