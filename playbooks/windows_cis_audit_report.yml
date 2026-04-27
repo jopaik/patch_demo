@@ -1,102 +1,97 @@
 ---
-- name: Windows 2019 CIS Audit & Local Web Hosting
+- name: Windows 2019 CIS Audit & Local Web Hosting (Easy Checks Only)
   hosts: joon-win2019
   become: no
   gather_facts: yes
   vars:
-    # --- CIS ROLE SETTINGS ---
     setup_audit: true
     run_audit: true
     remediate: false
-    win2019cis_skip_list: 
-      # 1. Network Stack & Protocol Killers
-      - "18.5.7"   
-      - "18.5.10"  
-      - "18.5.11"
-      - "18.5.12"  
-      - "18.5.4"   
-      # 2. UAC & Token Killers
-      - "2.3.17.4" 
-      - "2.3.17.1" 
-      - "2.3.17.3"
-      # 3. SESSION START & LOGON KILLERS (The New Additions)
-      - "2.2.3"    # Deny log on through Remote Desktop Services
-      - "2.2.34"   # Log on as a service (Ensures Ansible svc account isn't kicked)
-      - "2.3.1.1"  # Accounts: Block Microsoft accounts
-      - "2.3.10.1" # Network access: Do not allow storage of passwords and credentials for network authentication
-      - "2.3.10.2" # Network access: Do not allow storage of passwords/credentials
-      - "2.3.11.8" # Network security: Force logoff when logon hours expire
-      # 4. WinRM & Shell Killers
-      - "18.9.102.1.1" 
-      - "18.9.102.1.2"     
-      # 5. Application & Execution Killers
-      - "18.9.26.1" 
-      - "18.9.69.1" 
-      - "18.9.12.1" 
-      - "18.9.45.1"
-    # --- THE FIX: Role-Specific Output Variables ---
-    # These force the role to generate the physical file you need.
 
-    win2019cis_output_format: "html"
-    win2019cis_output_file: "C:\\ansible_audit\\report.html"
-    
-    web_port: 8080
+    # --- THE MASSIVE SKIP LIST ---
+    # We disable entire sections to prevent connection drops and deep system changes.
+    # We are only allowing Section 1 (Password/Lockout) and specific safe items.
+    win2019cis_section2: false
+    win2019cis_section3: false
+    win2019cis_section4: false
+    win2019cis_section5: false
+    win2019cis_section6: false
+    win2019cis_section7: false
+    win2019cis_section8: false
+    win2019cis_section9: false
+    win2019cis_section17: false
+    win2019cis_section18: false
+
+    # Specifically skipping the connection-killers just in case a section is partially enabled
+    win2019cis_skip_list: 
+      - "18.5.7"   - "18.5.10"  - "18.5.11" - "18.5.12" - "18.5.4"
+      - "2.3.17.4" - "2.3.17.1" - "2.3.17.3" - "2.2.3" - "2.2.34"
+
+    # --- PATH SETTINGS ---
+    target_report: "C:\\ansible_audit\\report.html"
     web_root: "C:\\inetpub\\wwwroot\\compliance"
 
   tasks:
-    - name: Ensure Audit Directory Exists
+    - name: Prepare Audit Environment
       ansible.windows.win_file:
         path: "C:\\ansible_audit"
-        state: directory
+        state: "{{ item }}"
+      loop: [absent, directory]
 
-    - name: Run Windows 2019 CIS Audit
+    - name: Run Windows 2019 CIS Audit (Low-Risk Profile)
       ansible.builtin.include_role:
         name: ansible-lockdown.windows_2019_cis
       vars:
-        # Pass variables again here to ensure they override role defaults
         win2019cis_output_format: "html"
-        win2019cis_output_file: "C:\\ansible_audit\\report.html"
+        win2019cis_output_file: "{{ target_report }}"
+        win2019_cis_output_file: "{{ target_report }}"
 
-    - name: Check for report existence
-      ansible.windows.win_stat:
-        path: "{{ win2019cis_output_file }}"
-      register: report_stat
+    - name: Locate Generated Report
+      ansible.windows.win_shell: |
+        $report = Get-ChildItem -Path C:\ansible_audit -Filter "*.html" -Recurse | Select-Object -ExpandProperty FullName -First 1
+        if (-not $report) {
+            $report = Get-ChildItem -Path C:\ -Filter "report.html" -Recurse -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName -First 1
+        }
+        return $report
+      register: found_report
 
-    - name: Fail with Debugging Info if missing
-      ansible.builtin.fail:
-        msg: "Report not found at {{ win2019cis_output_file }}. The role might be using a different variable for the path."
-      when: not report_stat.stat.exists
-
-    - name: Webserver Setup (IIS)
+    - name: Deploy IIS Dashboard
       block:
-        - name: Install IIS
+        - name: Install IIS Features
           ansible.windows.win_feature:
             name: Web-Server
             state: present
 
-        - name: Create Compliance Web Directory
+        - name: Create Web Directory
           ansible.windows.win_file:
             path: "{{ web_root }}"
             state: directory
 
         - name: Copy Audit Report to IIS Root
           ansible.windows.win_copy:
-            src: "{{ win2019cis_output_file }}"
+            src: "{{ found_report.stdout | trim }}"
             dest: "{{ web_root }}\\index.html"
             remote_src: yes
+          when: found_report.stdout | trim != ""
 
-        - name: Configure IIS Site on Port {{ web_port }}
+        - name: Configure IIS Site on Port 8080
           community.windows.win_iis_website:
             name: "CIS_Audit_Dashboard"
             state: started
-            port: "{{ web_port }}"
+            port: 8080
             physical_path: "{{ web_root }}"
 
-        - name: Allow Firewall Port {{ web_port }}
+        - name: Allow Firewall Port 8080
           community.windows.win_firewall_rule:
-            name: "Allow_CIS_Report_8080"
-            localport: "{{ web_port }}"
+            name: "Allow_CIS_Report"
+            localport: 8080
             action: allow
             direction: inbound
             protocol: tcp
             state: present
+      when: found_report.stdout | trim != ""
+
+    - name: Handle Missing Report Error
+      ansible.builtin.fail:
+        msg: "The CIS Audit finished, but no HTML report was found."
+      when: found_report.stdout | trim == ""
