@@ -6,7 +6,6 @@
   vars:
     cve_advisory_ids: "{{ input_cve_ids | default(['RHSA-2026:8259', 'CVE-2026-33412']) }}"
     target_kb_ids: "{{ input_kb_ids | default(['KB4052623', 'KB2267602']) }}"
-    # Local controller directory to store fetched reports
     local_audit_dir: "./audit_reports"
 
   tasks:
@@ -38,11 +37,13 @@
 
         - name: Run RHEL 9 CIS Audit Role
           ansible.builtin.include_role:
-            name: ansible-lockdown.rhel9_cis 
+            name: ansible-lockdown.rhel9_cis
           vars:
             rhel9_cis_setup_audit: true
             rhel9_cis_run_audit: true
             rhel9_cis_remediate: false
+            # Fix for the 'authselect' assertion error
+            rhel9cis_authselect_custom_profile_name: "cis_hardened_profile"
           when: ansible_distribution_major_version == "9"
 
         - name: Fetch RHEL CIS Report to Controller
@@ -83,12 +84,13 @@
 
         - name: Run Windows 2019 CIS Audit Role
           ansible.builtin.include_role:
-            name: ansible-lockdown.windows_2019_cis
+            name: ansible-lockdown.Windows-2019-CIS
           vars:
             setup_audit: true
             run_audit: true
             remediate: false
-          when: ansible_distribution contains "2019"
+          # Fixed: Using 'in' operator instead of 'contains'
+          when: "'2019' in ansible_distribution"
 
         - name: Find Windows CIS Report
           ansible.windows.win_find:
@@ -155,7 +157,7 @@
 
     - name: Upload CIS Audit Reports to Webserver
       ansible.builtin.copy:
-        src: "./audit_reports/"
+        src: "{{ local_audit_dir }}/"
         dest: "/var/www/compliance/"
         mode: '0644'
 
@@ -173,13 +175,13 @@
                   table { width: 100%; border-collapse: collapse; }
                   th, td { padding: 10px; border: 1px solid #ddd; text-align: left; }
                   th { background: #333; color: white; }
-                  .VULNERABLE { color: red; font-weight: bold; }
-                  .COMPLIANT { color: green; font-weight: bold; }
+                  .VULNERABLE { color: #d9534f; font-weight: bold; }
+                  .COMPLIANT { color: #5cb85c; font-weight: bold; }
               </style>
           </head>
           <body>
               <div class="container">
-                  <h1>Infrastructure Patching Dashboard</h1>
+                  <h1>Infrastructure Patching Dashboard (8080)</h1>
                   <table>
                       <tr>
                           <th>Host</th>
@@ -208,10 +210,10 @@
         content: |
           <html><body style="font-family:sans-serif; background:#2c3e50; color:white; padding:50px;">
           <div style="background:white; color:#333; padding:30px; border-radius:10px; max-width:800px; margin:auto;">
-          <h1>CIS Security Portal</h1>
+          <h1>CIS Security Portal (8081)</h1>
           <hr>
           {% for host in groups['all'] %}
-          <a href="/{{ host }}/index.html" style="display:block; padding:10px; margin:5px; background:#eee; color:#2980b9;">{{ host }} - Full Security Report</a>
+          <a href="/{{ host }}/index.html" style="display:block; padding:10px; margin:5px; background:#eee; color:#2980b9; text-decoration:none;">{{ host }} - Full Security Report</a>
           {% endfor %}
           </div></body></html>
       notify: Restart Apache
