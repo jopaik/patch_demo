@@ -1,68 +1,77 @@
 ---
 - name: Windows 2019 CIS Audit & Local Web Hosting
-  hosts: joon-win2019
+  hosts: windows_2019_servers
   become: no
   gather_facts: yes
   vars:
+    # --- CIS ROLE SETTINGS ---
     setup_audit: true
     run_audit: true
     remediate: false
     win2019cis_skip_list: ["18.5.7"]
 
-    # --- THE FIX: Explicitly define the report format and path ---
-    # Many versions of the role use these variables to control output:
-    audit_format: "html"
-    audit_out_file: "C:\\ansible_audit\\report.html"
+    # --- THE FIX: Role-Specific Output Variables ---
+    # These force the role to generate the physical file you need.
+    win2019cis_output_format: "html"
+    win2019cis_output_file: "C:\\ansible_audit\\report.html"
     
     web_port: 8080
     web_root: "C:\\inetpub\\wwwroot\\compliance"
 
   tasks:
+    - name: Ensure Audit Directory Exists
+      ansible.windows.win_file:
+        path: "C:\\ansible_audit"
+        state: directory
+
     - name: Run Windows 2019 CIS Audit
       ansible.builtin.include_role:
         name: ansible-lockdown.windows_2019_cis
       vars:
-        # Forcing the output file variable specifically for the role
-        win2019cis_audit_out_file: "{{ audit_out_file }}"
+        # Pass variables again here to ensure they override role defaults
+        win2019cis_output_format: "html"
+        win2019cis_output_file: "C:\\ansible_audit\\report.html"
 
-    - name: Ensure Audit Report was actually created
+    - name: Check for report existence
       ansible.windows.win_stat:
-        path: "{{ audit_out_file }}"
+        path: "{{ win2019cis_output_file }}"
       register: report_stat
 
-    - name: Fail if report is missing
+    - name: Fail with Debugging Info if missing
       ansible.builtin.fail:
-        msg: "The CIS role finished but did not create {{ audit_out_file }}. Check role logs."
+        msg: "Report not found at {{ win2019cis_output_file }}. The role might be using a different variable for the path."
       when: not report_stat.stat.exists
 
-    - name: Install IIS Web Server Role
-      ansible.windows.win_feature:
-        name: Web-Server
-        state: present
+    - name: Webserver Setup (IIS)
+      block:
+        - name: Install IIS
+          ansible.windows.win_feature:
+            name: Web-Server
+            state: present
 
-    - name: Create Compliance Directory
-      ansible.windows.win_file:
-        path: "{{ web_root }}"
-        state: directory
+        - name: Create Compliance Web Directory
+          ansible.windows.win_file:
+            path: "{{ web_root }}"
+            state: directory
 
-    - name: Copy Audit Report to Web Root
-      ansible.windows.win_copy:
-        src: "{{ audit_out_file }}"
-        dest: "{{ web_root }}\\index.html"
-        remote_src: yes
+        - name: Copy Audit Report to IIS Root
+          ansible.windows.win_copy:
+            src: "{{ win2019cis_output_file }}"
+            dest: "{{ web_root }}\\index.html"
+            remote_src: yes
 
-    - name: Configure CIS Audit Website on Port {{ web_port }}
-      community.windows.win_iis_website:
-        name: "CIS_Audit_Dashboard"
-        state: started
-        port: "{{ web_port }}"
-        physical_path: "{{ web_root }}"
+        - name: Configure IIS Site on Port {{ web_port }}
+          community.windows.win_iis_website:
+            name: "CIS_Audit_Dashboard"
+            state: started
+            port: "{{ web_port }}"
+            physical_path: "{{ web_root }}"
 
-    - name: Open Firewall Port {{ web_port }}
-      community.windows.win_firewall_rule:
-        name: "Allow_CIS_Report_8080"
-        localport: "{{ web_port }}"
-        action: allow
-        direction: inbound
-        protocol: tcp
-        state: present
+        - name: Allow Firewall Port {{ web_port }}
+          community.windows.win_firewall_rule:
+            name: "Allow_CIS_Report_8080"
+            localport: "{{ web_port }}"
+            action: allow
+            direction: inbound
+            protocol: tcp
+            state: present
