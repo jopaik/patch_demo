@@ -9,10 +9,6 @@ roles:
     src: https://github.com/ansible-lockdown/Windows-2022-CIS
     scm: git
 
-  - name: ansible-lockdown.rhel9_cis
-    src: https://github.com/ansible-lockdown/rhel9_cis
-    scm: git
-
   # --- MindPoint Group Audit Roles (Galaxy Source) ---
   - name: mindpointgroup.rhel8_cis_audit
   - name: mindpointgroup.rhel9_cis_audit
