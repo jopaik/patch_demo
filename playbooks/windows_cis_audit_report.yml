@@ -32,8 +32,7 @@
       - "2.3.17.4" 
       - "2.3.17.1" 
       - "2.3.17.3" 
-      - "2.2.3" 
-      - "2.2.34"
+      - "2.2.3" - "2.2.34"
 
     # --- PATH SETTINGS ---
     target_report: "C:\\ansible_audit\\report.html"
@@ -54,52 +53,52 @@
         win2019cis_output_file: "{{ target_report }}"
         win2019_cis_output_file: "{{ target_report }}"
 
-    - name: Locate Generated Report
-      ansible.windows.win_shell: |
-        $report = Get-ChildItem -Path C:\ansible_audit -Filter "*.html" -Recurse | Select-Object -ExpandProperty FullName -First 1
-        if (-not $report) {
-            $report = Get-ChildItem -Path C:\ -Filter "report.html" -Recurse -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName -First 1
-        }
-        return $report
-      register: found_report
+    # - name: Locate Generated Report
+    #   ansible.windows.win_shell: |
+    #     $report = Get-ChildItem -Path C:\ansible_audit -Filter "*.html" -Recurse | Select-Object -ExpandProperty FullName -First 1
+    #     if (-not $report) {
+    #         $report = Get-ChildItem -Path C:\ -Filter "report.html" -Recurse -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName -First 1
+    #     }
+    #     return $report
+    #   register: found_report
 
-    - name: Deploy IIS Dashboard
-      block:
-        - name: Install IIS Features
-          ansible.windows.win_feature:
-            name: Web-Server
-            state: present
+    # - name: Deploy IIS Dashboard
+    #   block:
+    #     - name: Install IIS Features
+    #       ansible.windows.win_feature:
+    #         name: Web-Server
+    #         state: present
 
-        - name: Create Web Directory
-          ansible.windows.win_file:
-            path: "{{ web_root }}"
-            state: directory
+    #     - name: Create Web Directory
+    #       ansible.windows.win_file:
+    #         path: "{{ web_root }}"
+    #         state: directory
 
-        - name: Copy Audit Report to IIS Root
-          ansible.windows.win_copy:
-            src: "{{ found_report.stdout | trim }}"
-            dest: "{{ web_root }}\\index.html"
-            remote_src: yes
-          when: found_report.stdout | trim != ""
+    #     - name: Copy Audit Report to IIS Root
+    #       ansible.windows.win_copy:
+    #         src: "{{ found_report.stdout | trim }}"
+    #         dest: "{{ web_root }}\\index.html"
+    #         remote_src: yes
+    #       when: found_report.stdout | trim != ""
 
-        - name: Configure IIS Site on Port 8080
-          community.windows.win_iis_website:
-            name: "CIS_Audit_Dashboard"
-            state: started
-            port: 8080
-            physical_path: "{{ web_root }}"
+    #     - name: Configure IIS Site on Port 8080
+    #       community.windows.win_iis_website:
+    #         name: "CIS_Audit_Dashboard"
+    #         state: started
+    #         port: 8080
+    #         physical_path: "{{ web_root }}"
 
-        - name: Allow Firewall Port 8080
-          community.windows.win_firewall_rule:
-            name: "Allow_CIS_Report"
-            localport: 8080
-            action: allow
-            direction: inbound
-            protocol: tcp
-            state: present
-      when: found_report.stdout | trim != ""
+    #     - name: Allow Firewall Port 8080
+    #       community.windows.win_firewall_rule:
+    #         name: "Allow_CIS_Report"
+    #         localport: 8080
+    #         action: allow
+    #         direction: inbound
+    #         protocol: tcp
+    #         state: present
+    #   when: found_report.stdout | trim != ""
 
-    - name: Handle Missing Report Error
-      ansible.builtin.fail:
-        msg: "The CIS Audit finished, but no HTML report was found."
-      when: found_report.stdout | trim == ""
+    # - name: Handle Missing Report Error
+    #   ansible.builtin.fail:
+    #     msg: "The CIS Audit finished, but no HTML report was found."
+    #   when: found_report.stdout | trim == ""
