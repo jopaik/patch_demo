@@ -3,9 +3,17 @@
   hosts: jp_rhel
   become: true
   vars:
-    # Changed to a list format
-    cve_advisory_ids: "{{ input_cve_ids | default(['RHSA-2026:8259', 'CVE-2026-33412']) }}"
+    # 1. Define the default if the variable is not defined at all
+    raw_cve_input: "{{ input_cve_id | default('RHSA-2026:8259, CVE-2026-33412') }}"
 
+    # 2. Convert and Clean: If it's a string, split it. If it's already a list, use it.
+    cve_advisory_ids: >-
+      {% if raw_cve_input is string %}
+        {{ (raw_cve_input | replace(',', ' ')).split() | map('trim') | list }}
+      {% else %}
+        {{ raw_cve_input }}
+      {% endif %}
+      
   tasks:
     - name: Apply specific advisories via dnf
       # The join filter turns ['ID1', 'ID2'] into "ID1 --advisory=ID2"
