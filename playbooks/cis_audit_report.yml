@@ -133,6 +133,9 @@
 - name: Phase 2 - Deploy Centralized Report Webserver
   hosts: jp_webserver
   become: yes
+  vars:
+    # Add this here so it's available to tasks in this play
+    local_audit_dir: "./audit_reports"
   tasks:
     - name: Webserver Setup
       block:
