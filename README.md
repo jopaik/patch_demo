@@ -1,6 +1,6 @@
 # Patch_Demo
 
-This project demonstrates the **RHEL** and **Windows** patching process for specific **CVE** (Common Vulnerabilities and Exposures) and **KB** (Knowledge Base) IDs.
+This project demonstrates the **RHEL** and **Windows** patching process for specific **RHSA** (Red Hat Security Advisory), **CVE** (Common Vulnerabilities and Exposures) and **KB** (Knowledge Base) IDs.
 
 ### Demo Workflow
 The demo covers the following four phases:
