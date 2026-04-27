@@ -90,7 +90,7 @@
             run_audit: true
             remediate: false
           # Fixed: Using 'in' operator instead of 'contains'
-          when: "'2019' in ansible_distribution"
+          when: ansible_distribution is search("2019")
 
         - name: Find Windows CIS Report
           ansible.windows.win_find:
@@ -107,11 +107,26 @@
 
     - name: Set Universal Compliance Facts
       ansible.builtin.set_fact:
-        missing_targets: "{{ rhel_target_check.stdout_lines if ansible_os_family == 'RedHat' else win_target_check.results | selectattr('rc', 'ne', 0) | map(attribute='item') | list }}"
-        all_unpatched: "{{ rhel_all_check.stdout_lines if ansible_os_family == 'RedHat' else win_all_check.updates | map(attribute='kb') | flatten | list }}"
-        compliance_status: "{{ 'VULNERABLE' if ( (rhel_target_check is defined and rhel_target_check.stdout != '') or (win_target_check is defined and win_target_check.results | selectattr('rc', 'ne', 0) | list | length > 0) ) else 'COMPLIANT' }}"
-        reboot_pending: "{{ 'YES' if ( (rhel_reboot_check is defined and rhel_reboot_check.rc != 0) or (win_reboot_check is defined and win_reboot_check.stdout | trim == 'True') ) else 'NO' }}"
-
+        # Use default('') to prevent 'stdout' undefined errors if a check was skipped
+        missing_targets: >-
+          {{ rhel_target_check.stdout_lines | default([]) if ansible_os_family == 'RedHat' 
+             else win_target_check.results | default([]) | selectattr('rc', 'defined') | selectattr('rc', 'ne', 0) | map(attribute='item') | list }}
+        
+        all_unpatched: >-
+          {{ rhel_all_check.stdout_lines | default([]) if ansible_os_family == 'RedHat' 
+             else win_all_check.updates | default([]) | map(attribute='kb') | flatten | list }}
+        
+        compliance_status: >-
+          {{ 'VULNERABLE' if (
+            (rhel_target_check.stdout | default('') != '') or 
+            (win_target_check.results | default([]) | selectattr('rc', 'defined') | selectattr('rc', 'ne', 0) | list | length > 0)
+          ) else 'COMPLIANT' }}
+        
+        reboot_pending: >-
+          {{ 'YES' if (
+            (rhel_reboot_check.rc | default(0) != 0) or 
+            (win_reboot_check.stdout | default('') | trim == 'True')
+          ) else 'NO' }}
 # ==========================================
 # PHASE 2: GENERATE CONSOLIDATED REPORTS
 # ==========================================
