@@ -2,14 +2,19 @@
 - name: Scheduled Delayed Execution
   hosts: all
   sources:
-    - ansible.eda.tick:
-        seconds: 5  # The source will pulse every 5 seconds
-        limit: 1    # We only want the FIRST pulse to trigger the rule
+    - name: Use generic source to simulate a tick
+      ansible.eda.generic:
+        # We define a payload to mimic the 'tick' behavior
+        payload:
+          - i: 0
+        # The loop acts as our pulse timer
+        loop_count: 1     # Equivalent to 'limit: 1'
+        loop_delay: 5     # The delay in seconds before starting/between loops
 
   rules:
-    - name: Trigger Patching after first tick
-      condition: event.i == 0  # Matches the very first event generated
+    - name: Trigger Patching after 5 second delay
+      condition: event.i == 0
       actions:
         - run_job_template:
-            name: "Patch_Workflow"
+            name: "Patch_Workflow_Short"
             organization: "Default"
