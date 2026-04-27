@@ -8,23 +8,34 @@
     setup_audit: true
     run_audit: true
     remediate: false
-    win2019cis_skip_list:
-      # Network stack resets
-      - "18.5.7"
-      - "18.5.10"
+    win2019cis_skip_list: 
+      # 1. Network Stack & Protocol Killers
+      - "18.5.7"   
+      - "18.5.10"  
       - "18.5.11"
-      - "18.5.12"
-      - "18.5.4"
-      # UAC / Session resets
-      - "2.3.17.4"
-      - "2.3.17.1"
+      - "18.5.12"  
+      - "18.5.4"   
+      # 2. UAC & Token Killers
+      - "2.3.17.4" 
+      - "2.3.17.1" 
       - "2.3.17.3"
-      # Potential WinRM interference
-      - "18.9.102.1.1"
-      - "18.9.102.1.2"
-
+      # 3. SESSION START & LOGON KILLERS (The New Additions)
+      - "2.2.3"    # Deny log on through Remote Desktop Services
+      - "2.2.34"   # Log on as a service (Ensures Ansible svc account isn't kicked)
+      - "2.3.1.1"  # Accounts: Block Microsoft accounts
+      - "2.3.10.2" # Network access: Do not allow storage of passwords/credentials
+      - "2.3.11.8" # Network security: Force logoff when logon hours expire
+      # 4. WinRM & Shell Killers
+      - "18.9.102.1.1" 
+      - "18.9.102.1.2"     
+      # 5. Application & Execution Killers
+      - "18.9.26.1" 
+      - "18.9.69.1" 
+      - "18.9.12.1" 
+      - "18.9.45.1"
     # --- THE FIX: Role-Specific Output Variables ---
     # These force the role to generate the physical file you need.
+
     win2019cis_output_format: "html"
     win2019cis_output_file: "C:\\ansible_audit\\report.html"
     
