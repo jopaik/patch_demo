@@ -1,41 +1,44 @@
 ---
 - name: Windows 2019 CIS Audit & Local Web Hosting
-  hosts: joon-win2019
+  hosts: windows_2019_servers
   become: no
   gather_facts: yes
   vars:
-    # 1. CIS ROLE SETTINGS
     setup_audit: true
     run_audit: true
-    remediate: false  # Audit only
-    
-    # 2. SKIP LIST - Prevents Rule 18.5.7 from dropping the connection
-    win2019cis_skip_list:
-      - "18.5.7"
+    remediate: false
+    win2019cis_skip_list: ["18.5.7"]
 
-    # 3. WEBSERVER SETTINGS
+    # --- THE FIX: Explicitly define the report format and path ---
+    # Many versions of the role use these variables to control output:
+    audit_format: "html"
+    audit_out_file: "C:\\ansible_audit\\report.html"
+    
     web_port: 8080
     web_root: "C:\\inetpub\\wwwroot\\compliance"
-    # Source path where the lockdown role places the report
-    audit_report_src: "C:\\ansible_audit\\report.html"
 
   tasks:
     - name: Run Windows 2019 CIS Audit
       ansible.builtin.include_role:
         name: ansible-lockdown.windows_2019_cis
+      vars:
+        # Forcing the output file variable specifically for the role
+        win2019cis_audit_out_file: "{{ audit_out_file }}"
+
+    - name: Ensure Audit Report was actually created
+      ansible.windows.win_stat:
+        path: "{{ audit_out_file }}"
+      register: report_stat
+
+    - name: Fail if report is missing
+      ansible.builtin.fail:
+        msg: "The CIS role finished but did not create {{ audit_out_file }}. Check role logs."
+      when: not report_stat.stat.exists
 
     - name: Install IIS Web Server Role
       ansible.windows.win_feature:
         name: Web-Server
         state: present
-        include_management_tools: yes
-
-    - name: IIS Conflict Resolution - Stop Default Website
-      community.windows.win_iis_website:
-        name: "Default Web Site"
-        state: stopped
-      # This prevents port 80/443 issues if they exist, 
-      # similar to scrubbing 'Listen 80' in Apache.
 
     - name: Create Compliance Directory
       ansible.windows.win_file:
@@ -44,7 +47,7 @@
 
     - name: Copy Audit Report to Web Root
       ansible.windows.win_copy:
-        src: "{{ audit_report_src }}"
+        src: "{{ audit_out_file }}"
         dest: "{{ web_root }}\\index.html"
         remote_src: yes
 
@@ -54,7 +57,6 @@
         state: started
         port: "{{ web_port }}"
         physical_path: "{{ web_root }}"
-      register: iis_result
 
     - name: Open Firewall Port {{ web_port }}
       community.windows.win_firewall_rule:
@@ -64,10 +66,3 @@
         direction: inbound
         protocol: tcp
         state: present
-
-    - name: Display Access Information
-      ansible.builtin.debug:
-        msg: 
-          - "Windows CIS Audit Complete."
-          - "Report skipped rule 18.5.7 to maintain connectivity."
-          - "Access report at http://{{ ansible_host }}:{{ web_port }}"
