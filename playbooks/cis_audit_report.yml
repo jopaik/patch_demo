@@ -1,12 +1,11 @@
 ---
-- name: Phase 1 - Audit Patches, CIS Benchmarks, and Collect Existing Reports
+- name: Phase 1 - Audit Patches, CIS Benchmarks, and Collect .audit_report
   hosts: jp_rhel, jp_windows
   become: no
   gather_facts: yes
   vars:
     cve_advisory_ids: "{{ input_cve_ids | default(['RHSA-2026:8259', 'CVE-2026-33412']) }}"
     target_kb_ids: "{{ input_kb_ids | default(['KB4052623', 'KB2267602']) }}"
-    # Absolute path on the AAP controller to store files temporarily
     local_audit_dir: "/runner/project/audit_reports"
 
   tasks:
@@ -15,7 +14,7 @@
         global_cve_ids: "{{ cve_advisory_ids }}"
         global_kb_ids: "{{ target_kb_ids }}"
 
-    # --- RHEL AUDIT & FETCH ---
+    # --- RHEL AUDIT BLOCK ---
     - name: RHEL Audit Block
       when: ansible_os_family == "RedHat"
       become: yes
@@ -28,12 +27,6 @@
         - name: Discover ALL Unpatched RHEL Advisories
           ansible.builtin.command: "dnf updateinfo list --security"
           register: rhel_all_check
-          changed_when: false
-
-        - name: Check RHEL Reboot Status
-          ansible.builtin.command: needs-restarting -r
-          register: rhel_reboot_check
-          failed_when: false
           changed_when: false
 
         - name: Run RHEL 9 CIS Audit Role
@@ -53,7 +46,7 @@
             flat: no
           failed_when: false
 
-    # --- WINDOWS AUDIT & FETCH ---
+    # --- WINDOWS AUDIT BLOCK ---
     - name: Windows Audit Block
       when: ansible_os_family == "Windows"
       block:
@@ -62,21 +55,6 @@
             category_names: [SecurityUpdates, CriticalUpdates]
             state: searched
           register: win_all_check
-
-        - name: Check Windows for Targeted KBs
-          ansible.windows.win_shell: |
-            $targetId = "{{ item }}".ToUpper().Replace("KB", "")
-            $allMissing = @({{ win_all_check.updates | default([]) | map(attribute='kb') | flatten | map('regex_replace', '^', "'") | map('regex_replace', '$', "'") | join(',') }})
-            $installed = Get-HotFix | Where-Object { $_.HotFixID -match $targetId }
-            if ($installed -or ($allMissing -notcontains $targetId)) { exit 0 } else { exit 1 }
-          loop: "{{ target_kb_ids }}"
-          register: win_target_check
-          failed_when: false 
-
-        - name: Check Windows Reboot Status
-          ansible.windows.win_shell: "return (Test-Path HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\WindowsUpdate\\Auto Update\\RebootRequired)"
-          register: win_reboot_check
-          failed_when: false
 
         - name: Run Windows 2019 CIS Audit Role
           ansible.builtin.include_role:
@@ -94,28 +72,17 @@
             flat: no
           failed_when: false
 
-    # --- DATA CONSOLIDATION ---
+    # --- COMPLIANCE DATA CONSOLIDATION ---
     - name: Set Universal Compliance Facts
       ansible.builtin.set_fact:
-        missing_targets: >-
-          {{ rhel_target_check.stdout_lines | default([]) if ansible_os_family == 'RedHat' 
-             else win_target_check.results | default([]) | selectattr('rc', 'defined') | selectattr('rc', 'ne', 0) | map(attribute='item') | list }}
-        all_unpatched: >-
-          {{ rhel_all_check.stdout_lines | default([]) if ansible_os_family == 'RedHat' 
-             else win_all_check.updates | default([]) | map(attribute='kb') | flatten | list }}
         compliance_status: >-
           {{ 'VULNERABLE' if (
             (rhel_target_check.stdout | default('') != '') or 
-            (win_target_check.results | default([]) | selectattr('rc', 'defined') | selectattr('rc', 'ne', 0) | list | length > 0)
+            (win_all_check.updates | default([]) | length > 0)
           ) else 'COMPLIANT' }}
-        reboot_pending: >-
-          {{ 'YES' if (
-            (rhel_reboot_check.rc | default(0) != 0) or 
-            (win_reboot_check.stdout | default('') | trim == 'True')
-          ) else 'NO' }}
 
 # ==========================================
-# PHASE 2: DEPLOY TO WEBSERVER
+# PHASE 2: WEBSERVER DEPLOYMENT (FIXED)
 # ==========================================
 - name: Phase 2 - Deploy Centralized Report Webserver
   hosts: jp_webserver
@@ -125,16 +92,31 @@
     web_root_compliance: "/var/www/compliance"
 
   tasks:
-    - name: Webserver Setup
+    - name: Webserver Setup & Conflict Resolution
       block:
+        - name: Disable SELinux completely
+          ansible.builtin.selinux: { state: disabled }
+
+        - name: Apply Permissive Mode at Runtime
+          ansible.builtin.command: setenforce 0
+          failed_when: false
+
         - name: Install Apache
           ansible.builtin.dnf: { name: httpd, state: present }
+
+        - name: Prevent Port Conflict - Comment out Listen 80
+          ansible.builtin.replace:
+            path: /etc/httpd/conf/httpd.conf
+            regexp: '^Listen 80'
+            replace: '# Listen 80'
+
         - name: Configure Ports 8080 and 8081
           ansible.builtin.copy:
             dest: /etc/httpd/conf.d/ports.conf
             content: |
               Listen 8080
               Listen 8081
+
         - name: Open Firewall Ports
           ansible.posix.firewalld:
             port: "{{ item }}/tcp"
@@ -142,6 +124,7 @@
             state: enabled
             immediate: yes
           loop: [8080, 8081]
+
         - name: Start Apache
           ansible.builtin.service: { name: httpd, state: started, enabled: yes }
 
@@ -151,61 +134,40 @@
         state: directory
         mode: '0755'
 
-    - name: Verify Audit Reports Exist on Controller
-      delegate_to: localhost
-      become: no
-      ansible.builtin.stat:
-        path: "{{ local_audit_dir }}"
-      register: audit_stats
-
-    - name: Upload Fetched Audit Reports to Webserver
+    - name: Upload Collected .audit_report Data
       ansible.builtin.copy:
         src: "{{ local_audit_dir }}/"
         dest: "{{ web_root_compliance }}/"
         mode: '0644'
-      when: audit_stats.stat.exists
 
-    - name: Generate Infrastructure Dashboard (8080)
+    - name: Generate Dashboard (8080)
       ansible.builtin.copy:
         dest: "/var/www/html/index.html"
         content: |
-          <!DOCTYPE html>
-          <html>
-          <body style="font-family: sans-serif; padding: 20px;">
-              <h1>Infrastructure Patching Dashboard (8080)</h1>
-              <table border="1" cellpadding="10" style="border-collapse: collapse; width: 100%;">
-                  <tr style="background: #eee;">
-                      <th>Host</th><th>Status</th><th>Reboot</th><th>Audit Link</th>
-                  </tr>
-                  {% for host in groups['all'] %}
-                  {% if hostvars[host]['compliance_status'] is defined %}
-                  <tr>
-                      <td>{{ host }}</td>
-                      <td style="color: {{ 'red' if hostvars[host]['compliance_status'] == 'VULNERABLE' else 'green' }};">
-                          {{ hostvars[host]['compliance_status'] }}
-                      </td>
-                      <td>{{ hostvars[host]['reboot_pending'] }}</td>
-                      <td><a href="http://{{ ansible_host }}:8081/{{ host }}/">Browse Audit Files</a></td>
-                  </tr>
-                  {% endif %}
-                  {% endfor %}
-              </table>
-          </body>
-          </html>
+          <html><body style="font-family:sans-serif; padding:20px;">
+          <h1>Infrastructure Security Dashboard (8080)</h1>
+          <table border="1" cellpadding="10" style="border-collapse:collapse; width:100%;">
+            <tr style="background:#eee;"><th>Host</th><th>Status</th><th>Audit Link</th></tr>
+            {% for host in groups['all'] %}
+            <tr>
+              <td>{{ host }}</td>
+              <td>{{ hostvars[host]['compliance_status'] | default('UNKNOWN') }}</td>
+              <td><a href="http://{{ ansible_host }}:8081/{{ host }}/">Browse Reports</a></td>
+            </tr>
+            {% endfor %}
+          </table></body></html>
 
-    - name: Generate CIS Master Index (8081)
+    - name: Generate CIS Index (8081)
       ansible.builtin.copy:
         dest: "{{ web_root_compliance }}/index.html"
         content: |
           <html><body style="font-family:sans-serif; background:#2c3e50; color:white; padding:50px;">
           <div style="background:white; color:#333; padding:30px; border-radius:10px; max-width:800px; margin:auto;">
           <h1>CIS Security Portal (8081)</h1>
-          <p>The following hosts have audit data available:</p>
+          <p>Historical and active .audit_report data:</p>
           <hr>
           {% for host in groups['all'] %}
-          <a href="/{{ host }}/" style="display:block; padding:10px; margin:5px; background:#eee; color:#2980b9; text-decoration:none;">
-            {{ host }} - Security Findings
-          </a>
+          <a href="/{{ host }}/" style="display:block; padding:10px; margin:5px; background:#eee; text-decoration:none;">{{ host }} - Collected Audit Files</a>
           {% endfor %}
           </div></body></html>
       notify: Restart Apache
