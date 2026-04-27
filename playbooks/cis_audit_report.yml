@@ -38,7 +38,7 @@
 
         - name: Run RHEL 9 CIS Audit Role
           ansible.builtin.include_role:
-            name: ansible-lockdown.rhel9_cis
+            name: ansible-lockdown.rhel9_cis 
           vars:
             rhel9_cis_setup_audit: true
             rhel9_cis_run_audit: true
@@ -83,7 +83,7 @@
 
         - name: Run Windows 2019 CIS Audit Role
           ansible.builtin.include_role:
-            name: ansible-lockdown.Windows-2019-CIS
+            name: ansible-lockdown.windows_2019_cis
           vars:
             setup_audit: true
             run_audit: true
