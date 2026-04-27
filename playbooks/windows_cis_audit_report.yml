@@ -24,8 +24,16 @@
 
     # Specifically skipping the connection-killers just in case a section is partially enabled
     win2019cis_skip_list: 
-      - "18.5.7"   - "18.5.10"  - "18.5.11" - "18.5.12" - "18.5.4"
-      - "2.3.17.4" - "2.3.17.1" - "2.3.17.3" - "2.2.3" - "2.2.34"
+      - "18.5.7"   
+      - "18.5.10"  
+      - "18.5.11" 
+      - "18.5.12" 
+      - "18.5.4"
+      - "2.3.17.4" 
+      - "2.3.17.1" 
+      - "2.3.17.3" 
+      - "2.2.3" 
+      - "2.2.34"
 
     # --- PATH SETTINGS ---
     target_report: "C:\\ansible_audit\\report.html"
