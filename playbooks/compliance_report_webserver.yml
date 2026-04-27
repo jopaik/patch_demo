@@ -94,11 +94,13 @@
   tasks:
     - name: Webserver Setup & Conflict Resolution
       block:
-        - name: Disable SELinux (Immediate and Persistent)
-          block:
-            - ansible.builtin.selinux: { state: disabled }
-            - ansible.builtin.command: setenforce 0
-          failed_when: false
+        - name: Update SELinux Config to Disabled
+          ansible.builtin.selinux: { state: disabled }
+
+        - name: Apply Permissive Mode at Runtime
+          ansible.builtin.command: setenforce 0
+          register: selinux_runtime
+          failed_when: false  # Correctly placed on the task, not the block
 
         - name: Install Apache
           ansible.builtin.dnf: { name: httpd, state: present }
