@@ -15,6 +15,6 @@
     - name: Trigger Patching after 5 second delay
       condition: event.i == 0
       actions:
-        - run_job_template:
+        - run_workflow_template:
             name: "Patch_Workflow_Short"
             organization: "Default"
