@@ -32,7 +32,8 @@
       - "2.3.17.4" 
       - "2.3.17.1" 
       - "2.3.17.3" 
-      - "2.2.3" - "2.2.34"
+      - "2.2.3" 
+      - "2.2.34"
 
     # --- PATH SETTINGS ---
     target_report: "C:\\ansible_audit\\report.html"
