@@ -50,13 +50,17 @@
         src: audit_template.html.j2
         dest: "{{ web_root }}/index.html"
 
-    # NEW TASK 1: Bind the Default Web Site to Port 8080
     - name: Ensure Default Web Site is listening on Port 8080
-      community.windows.win_iis_website_binding:
-        name: "Default Web Site"
-        port: 8080
-        protocol: http
-        state: present
+      ansible.windows.win_shell: |
+        Import-Module WebAdministration
+        if (!(Get-WebBinding -Name "Default Web Site" -Port 8080 -Protocol "http")) {
+            New-WebBinding -Name "Default Web Site" -Port 8080 -Protocol "http"
+            Write-Output "Binding created"
+        } else {
+            Write-Output "Binding already exists"
+        }
+      register: binding_result
+      changed_when: "'created' in binding_result.stdout"
 
     # NEW TASK 2: Map the folder as an IIS Virtual Directory
     - name: Setup IIS Virtual Directory for Compliance Report
