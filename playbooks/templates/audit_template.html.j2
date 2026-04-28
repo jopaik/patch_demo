@@ -24,15 +24,15 @@
         <h1>CIS Compliance Report</h1>
         <div class="meta">
             <strong>Server:</strong> {{ inventory_hostname }}<br>
-            <strong>Report Generated (EST):</strong> {{ now(tz='America/New_York', fmt='%Y-%m-%d %H:%M:%S') }}
+            <strong>Report Generated:</strong> {{ ny_time }}
         </div>
 
         <pre>
 {# 
-  This regex looks for the 'Execution Date:' pattern and replaces the 
-  timestamp with the current time from the Ansible controller.
+  This regex replaces the original Execution Date with the timestamp 
+  captured during Ansible fact gathering.
 #}
-{{ raw_audit_content.stdout | regex_replace('Execution Date:\s+\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}', 'Execution Date:     ' ~ now(tz='America/New_York', fmt='%Y-%m-%d %H:%M:%S')) }}
+{{ raw_audit_content.stdout | regex_replace('Execution Date:\s+\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}', 'Execution Date:     ' ~ ansible_date_time.date ~ ' ' ~ ansible_date_time.time) }}
         </pre>
     </div>
 </body>
