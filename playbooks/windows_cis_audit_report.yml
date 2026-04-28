@@ -7,6 +7,10 @@
     web_root: 'C:\\inetpub\\wwwroot\\compliance'
 
   tasks:
+    - name: Get current time in New York
+      ansible.builtin.set_fact:
+        ny_time: "{{ now(tz='America/New_York').strftime('%Y-%m-%d %H:%M:%S') }}"
+        
     # 1. PREREQUISITE: Install IIS (Fixes the "W3SVC not found" error)
     - name: Ensure IIS and Management Tools are installed
       ansible.windows.win_feature:
