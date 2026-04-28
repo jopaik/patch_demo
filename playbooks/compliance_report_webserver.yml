@@ -22,23 +22,11 @@
           register: rhel_target_check
           changed_when: false
 
-        - name: Discover ALL Unpatched RHEL Advisories
-          ansible.builtin.command: "dnf updateinfo list --security"
-          register: rhel_all_check
-          changed_when: false
-
-        - name: Check RHEL Reboot Status
-          ansible.builtin.command: needs-restarting -r
-          register: rhel_reboot_check
-          failed_when: false
-          changed_when: false
-
         - name: Set RHEL Compliance Facts
           ansible.builtin.set_fact:
             missing_targets: "{{ cve_advisory_ids | select('in', rhel_target_check.stdout | default('')) | list }}"
-            all_unpatched: "{{ rhel_all_check.stdout_lines | default([]) | map('regex_replace', '^\\s*(\\S+).*$', '\\1') | select('match', '^(RHSA|CVE|RHBA|RHEA)') | list }}"
+            all_unpatched: "{{ (rhel_all_check.stdout_lines | default([])) | map('regex_replace', '^\\s*(\\S+).*$', '\\1') | select('match', '^(RHSA|CVE|RHBA|RHEA)') | list }}"
             compliance_status: "{{ 'VULNERABLE' if (cve_advisory_ids | select('in', rhel_target_check.stdout | default('')) | list | length > 0) else 'COMPLIANT' }}"
-            reboot_pending: "{{ 'YES' if rhel_reboot_check.rc | default(0) != 0 else 'NO' }}"
 
     # --- WINDOWS AUDIT BLOCK ---
     - name: Windows Audit Block
@@ -50,62 +38,24 @@
             state: searched
           register: win_all_check
 
-        - name: Check Windows for Targeted KBs
-          ansible.windows.win_shell: |
-            $targetId = "{{ item }}".ToUpper().Replace("KB", "")
-            $allMissing = @({{ (win_all_check.updates | default([])) | map(attribute='kb') | flatten | map('regex_replace', '^', "'") | map('regex_replace', '$', "'") | join(',') | default("''") }})
-            $installed = Get-HotFix | Where-Object { $_.HotFixID -match $targetId }
-            if ($installed) { exit 0 } elseif ($allMissing -contains $targetId) { exit 1 } else { exit 0 }
-          loop: "{{ target_kb_ids }}"
-          register: win_target_check
-          failed_when: false 
-          changed_when: false
-
         - name: Set Windows Compliance Facts
           ansible.builtin.set_fact:
             missing_targets: "{{ win_target_check.results | selectattr('rc', 'defined') | selectattr('rc', 'ne', 0) | map(attribute='item') | list }}"
-            all_unpatched: "{{ (win_all_check.updates | default([])) | map(attribute='kb') | flatten | map('regex_replace', '^', 'KB') | unique | list }}"
             compliance_status: "{{ 'VULNERABLE' if (win_target_check.results | selectattr('rc', 'defined') | selectattr('rc', 'ne', 0) | list | length > 0) else 'COMPLIANT' }}"
-            reboot_pending: "{{ 'YES' if (win_updates_reboot_needed | default(false)) else 'NO' }}"
 
-    # --- WEBSERVER CONFIGURATION ---
-    - name: Webserver Setup & Conflict Resolution
+    # --- WEBSERVER CONFIGURATION (The Reporting Node) ---
+    - name: Webserver Setup & Reporting
       delegate_to: joon-webserver
       run_once: true
       become: yes
       block:
-        - name: Update SELinux Config to Disabled
-          ansible.builtin.selinux:
-            state: disabled
-          ignore_errors: yes
+        - name: Force New York Timezone on Webserver
+          community.general.timezone:
+            name: America/New_York
 
-        - name: Apply Permissive Mode at Runtime
-          ansible.builtin.command: setenforce 0
-          failed_when: false
-
-        - name: Install Apache
-          ansible.builtin.dnf:
-            name: httpd
-            state: present
-
-        - name: Configure custom Listen port 8080
-          ansible.builtin.copy:
-            dest: /etc/httpd/conf.d/ports.conf
-            content: "Listen 8080"
-
-        - name: Validate Apache Configuration
-          ansible.builtin.command: httpd -t
-          register: apache_config_check
-          changed_when: false
-
-        - name: Force Start Apache (Alternative Method)
-          ansible.builtin.shell: |
-            systemctl stop httpd || true
-            killall -9 httpd || true
-            systemctl reset-failed httpd
-            systemctl start httpd
-          register: force_start
-          changed_when: force_start.rc == 0
+        - name: Re-gather facts to capture NY Time
+          ansible.builtin.setup:
+            filter: ansible_date_time
 
         - name: Generate HTML Compliance Report
           ansible.builtin.copy:
@@ -119,43 +69,30 @@
                   <style>
                       body { font-family: 'Segoe UI', sans-serif; margin: 20px; background-color: #f8f9fa; }
                       .container { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); width: 95%; margin: auto; }
-                      .scope-box { background: #e9ecef; padding: 15px; border-radius: 8px; margin-bottom: 20px; border-left: 5px solid #212529; }
-                      .scope-label { font-weight: bold; color: #495057; text-transform: uppercase; font-size: 12px; display: block; margin-bottom: 5px; }
-                      table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 13px; }
+                      table { width: 100%; border-collapse: collapse; margin-top: 20px; }
                       th, td { padding: 12px; text-align: left; border-bottom: 1px solid #eee; }
-                      th { background-color: #212529; color: white; text-transform: uppercase; }
-                      .VULNERABLE { color: #dc3545; font-weight: bold; background-color: #f8d7da; padding: 3px 8px; border-radius: 4px; }
-                      .COMPLIANT { color: #198754; font-weight: bold; background-color: #d1e7dd; padding: 3px 8px; border-radius: 4px; }
-                      .scroller { max-height: 80px; overflow-y: auto; font-size: 11px; color: #666; border: 1px solid #f0f0f0; padding: 5px; background: #fafafa; }
+                      th { background-color: #212529; color: white; }
+                      .VULNERABLE { color: #dc3545; font-weight: bold; }
+                      .COMPLIANT { color: #198754; font-weight: bold; }
                   </style>
               </head>
               <body>
                   <div class="container">
                       <h1>Infrastructure Security Dashboard</h1>
-                      <p><strong>Audit Timestamp:</strong> {{ now( z='America/New_York', fmt='%Y-%m-%d %H:%M:%S') }}</p>
+                      <p><strong>Report Generated (EST/EDT):</strong> {{ ansible_date_time.date }} {{ ansible_date_time.time }}</p>
                       
-                      <div class="scope-box">
-                          <span class="scope-label">Targets Under Review:</span>
-                          {% set rhel_node = groups['jp_rhel'] | first | default(none) %}
-                          {% set win_node = groups['jp_windows'] | first | default(none) %}
-                          <strong>RHEL:</strong> {{ hostvars[rhel_node].global_cve_ids | default([]) | join(', ') if rhel_node else 'N/A' }}<br>
-                          <strong>Windows:</strong> {{ hostvars[win_node].global_kb_ids | default([]) | join(', ') if win_node else 'N/A' }}
-                      </div>
-
                       <table>
                           <tr>
                               <th>Host</th>
                               <th>Status</th>
                               <th>Missing Targeted</th>
-                              <th>Full System Vulnerabilities</th>
                           </tr>
                           {% for host in groups['all'] %}
                             {% if host != 'joon-webserver' and hostvars[host].compliance_status is defined %}
                             <tr>
-                                <td><strong>{{ host }}</strong></td>
+                                <td>{{ host }}</td>
                                 <td><span class="{{ hostvars[host].compliance_status }}">{{ hostvars[host].compliance_status }}</span></td>
-                                <td>{{ hostvars[host].missing_targets | default([]) | join(', ') if hostvars[host].missing_targets else 'None' }}</td>
-                                <td><div class="scroller">{{ hostvars[host].all_unpatched | default([]) | join(', ') if hostvars[host].all_unpatched else 'Clean' }}</div></td>
+                                <td>{{ hostvars[host].missing_targets | join(', ') if hostvars[host].missing_targets else 'None' }}</td>
                             </tr>
                             {% endif %}
                           {% endfor %}
@@ -163,9 +100,9 @@
                   </div>
               </body>
               </html>
-          notify: Alternative Force Restart
+          notify: Force Restart Apache
 
   handlers:
-    - name: Alternative Force Restart
+    - name: Force Restart Apache
       delegate_to: joon-webserver
       ansible.builtin.shell: "sudo systemctl restart httpd"

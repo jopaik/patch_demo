@@ -10,8 +10,8 @@
   tasks:
     - name: Get current time in New York
       ansible.builtin.set_fact:
-        ny_time: "{{ lookup('pipe', 'TZ=\"America/New_York\" date \"+%Y-%m-%d %H:%M:%S\"') }}"
-
+        ny_time: "{{ now(tz='America/New_York').strftime('%Y-%m-%d %H:%M:%S') }}"
+        
     # 1. PREREQUISITE: Install IIS
     - name: Ensure IIS and Management Tools are installed
       ansible.windows.win_feature:
