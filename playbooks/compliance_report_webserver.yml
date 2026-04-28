@@ -7,9 +7,10 @@
     target_kb_ids: "{{ input_kb_ids | default(['KB4052623', 'KB2267602']) }}"
 
   tasks:
-    - name: Get current time in New York (Handles DST automatically)
+    - name: Get current time in New York (Alternate method for older Ansible)
       ansible.builtin.set_fact:
-        ny_time: "{{ now(utc=true, tz='America/New_York').strftime('%Y-%m-%d %H:%M:%S') }}"
+        # Use the epoch (UTC) and convert to America/New_York
+        ny_time: "{{ '%Y-%m-%d %H:%M:%S %Z' | strftime(ansible_date_time.epoch, tz='America/New_York') }}"
 
     - name: Save Audit IDs as Facts
       ansible.builtin.set_fact:
@@ -29,7 +30,6 @@
         - name: Set RHEL Compliance Facts
           ansible.builtin.set_fact:
             missing_targets: "{{ cve_advisory_ids | select('in', rhel_target_check.stdout | default('')) | list }}"
-            all_unpatched: "{{ (rhel_all_check.stdout_lines | default([])) | map('regex_replace', '^\\s*(\\S+).*$', '\\1') | select('match', '^(RHSA|CVE|RHBA|RHEA)') | list }}"
             compliance_status: "{{ 'VULNERABLE' if (cve_advisory_ids | select('in', rhel_target_check.stdout | default('')) | list | length > 0) else 'COMPLIANT' }}"
 
     # --- WINDOWS AUDIT BLOCK ---
@@ -44,8 +44,8 @@
 
         - name: Set Windows Compliance Facts
           ansible.builtin.set_fact:
-            missing_targets: "{{ win_target_check.results | selectattr('rc', 'defined') | selectattr('rc', 'ne', 0) | map(attribute='item') | list }}"
-            compliance_status: "{{ 'VULNERABLE' if (win_target_check.results | selectattr('rc', 'defined') | selectattr('rc', 'ne', 0) | list | length > 0) else 'COMPLIANT' }}"
+            missing_targets: "{{ win_all_check.updates | selectattr('kb', 'defined') | map(attribute='kb') | select('in', target_kb_ids) | list }}"
+            compliance_status: "{{ 'VULNERABLE' if (win_all_check.updates | selectattr('kb', 'defined') | map(attribute='kb') | select('in', target_kb_ids) | list | length > 0) else 'COMPLIANT' }}"
 
     # --- WEBSERVER CONFIGURATION (The Reporting Node) ---
     - name: Webserver Setup & Reporting
@@ -75,7 +75,7 @@
               <body>
                   <div class="container">
                       <h1>Infrastructure Security Dashboard</h1>
-                      <p><strong>Report Generated (EST/EDT):</strong> {{ ny_time }}</p>
+                      <p><strong>Report Generated (NY Time):</strong> {{ ny_time }}</p>
                       
                       <table>
                           <tr>
@@ -84,7 +84,7 @@
                               <th>Missing Targeted</th>
                           </tr>
                           {% for host in groups['all'] %}
-                            {% if host != 'joon-webserver' and hostvars[host].compliance_status is defined %}
+                            {% if hostvars[host].compliance_status is defined %}
                             <tr>
                                 <td>{{ host }}</td>
                                 <td><span class="{{ hostvars[host].compliance_status }}">{{ hostvars[host].compliance_status }}</span></td>
@@ -101,4 +101,6 @@
   handlers:
     - name: Force Restart Apache
       delegate_to: joon-webserver
-      ansible.builtin.shell: "sudo systemctl restart httpd"
+      ansible.builtin.systemd:
+        name: httpd
+        state: restarted
