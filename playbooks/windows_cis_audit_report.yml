@@ -25,11 +25,6 @@
     web_root: 'C:\inetpub\wwwroot\compliance'
 
   tasks:
-    - name: Prepare Audit Environment
-      ansible.windows.win_file:
-        path: 'C:\ansible_audit'
-        state: '{{ item }}'
-      loop: [absent, directory]
 
     - name: Configure Surgical Rule Selection
       ansible.builtin.set_fact:
