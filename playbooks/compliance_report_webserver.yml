@@ -7,11 +7,11 @@
     target_kb_ids: "{{ input_kb_ids | default(['KB4052623', 'KB2267602']) }}"
 
   tasks:
-    - name: Get current time in New York (Alternate method for older Ansible)
+    - name: Get current time in EDT (Manual Offset)
       ansible.builtin.set_fact:
-        # Use the epoch (UTC) and convert to America/New_York
-        ny_time: "{{ '%Y-%m-%d %H:%M:%S %Z' | strftime(ansible_date_time.epoch, tz='America/New_York') }}"
-
+        # 14400 seconds = 4 hours (UTC - 4)
+        ny_time: "{{ '%Y-%m-%d %H:%M:%S EDT' | strftime((ansible_date_time.epoch | int) - 14400) }}"
+        
     - name: Save Audit IDs as Facts
       ansible.builtin.set_fact:
         global_cve_ids: "{{ cve_advisory_ids }}"
