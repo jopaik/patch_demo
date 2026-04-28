@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>CIS Audit Report: {{ inventory_hostname }}</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 40px; background: #f0f2f5; }
+        .card { background: white; padding: 25px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        h1 { color: #1a73e8; border-bottom: 2px solid #e8eaed; padding-bottom: 10px; }
+        .meta { color: #5f6368; margin-bottom: 20px; }
+        pre { 
+            background: #202124; 
+            color: #bdc1c6; 
+            padding: 20px; 
+            border-radius: 5px; 
+            overflow-x: auto; 
+            white-space: pre-wrap; 
+            font-size: 14px;
+            line-height: 1.5;
+        }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h1>CIS Compliance Report</h1>
+        <div class="meta">
+            <strong>Server:</strong> {{ inventory_hostname }}<br>
+            <strong>Date:</strong> {{ ansible_date_time.date }} {{ ansible_date_time.time }}
+        </div>
+        <pre>{{ raw_audit_content.stdout }}</pre>
+    </div>
+</body>
+</html>

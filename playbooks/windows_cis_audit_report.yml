@@ -21,7 +21,7 @@
     win2019cis_section18: false
 
     # --- PATH SETTINGS ---
-    target_report: 'C:\ansible_audit\report.html'
+    audit_out_file: 'C:\cis_audit_report.txt'
     web_root: 'C:\inetpub\wwwroot\compliance'
 
   tasks:
@@ -39,9 +39,6 @@
     - name: Run Windows 2019 CIS Audit (Rule 1.1.1 Only)
       ansible.builtin.include_role:
         name: 'ansible-lockdown.windows_2019_cis'
-      vars:
-        win2019cis_output_format: 'html'
-        win2019cis_output_file: '{{ target_report }}'
 
     - name: Install IIS Web Server
       ansible.windows.win_feature:
@@ -53,12 +50,17 @@
         path: '{{ web_root }}'
         state: directory
 
-    - name: Copy Audit Report to Web Root as index.html
-      ansible.windows.win_copy:
-        src: '{{ target_report }}'
-        dest: '{{ web_root }}\index.html'
-        remote_src: yes
+    # --- NEW CONVERSION STEPS ---
+    - name: Read the raw CIS text report
+      ansible.windows.win_shell: "Get-Content {{ audit_out_file }}"
+      register: raw_audit_content
 
+    - name: Convert Text to HTML and Deploy as index.html
+      ansible.windows.win_template:
+        src: audit_template.html.j2
+        dest: '{{ web_root }}\index.html'
+
+    # --- IIS CONFIGURATION ---
     - name: Setup IIS Website on Port 8080
       community.windows.win_iis_website:
         name: 'CIS_Audit_Display'
