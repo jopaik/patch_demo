@@ -1,63 +1,50 @@
 ---
-- name: Windows 2022 CIS Audit & Local Web Hosting
+- name: Windows 2022 CIS Audit - Minimal Test Case
   hosts: joon-win2022
-  # This ensures the following tasks target the Windows server, not the AAP container
-  connection: winrm 
   gather_facts: yes
   vars:
     setup_audit: true
     run_audit: true
     remediate: false
 
-    # --- 1. DISABLE ALL SECTIONS FOR SMALLEST TEST CASE ---
-    win2022cis_section1: false
-    # ... [rest of your section vars set to false] ...
+    # --- 1. GLOBAL DISABLE (The "Off" Switches) ---
+    win2022cis_section1: true   # Keep Section 1 open for our specific rules
+    win2022cis_section2: false
+    win2022cis_section3: false
+    win2022cis_section4: false
+    win2022cis_section5: false
+    win2022cis_section6: false
+    win2022cis_section7: false
+    win2022cis_section8: false
+    win2022cis_section9: false
+    win2022cis_section17: false
+    win2022cis_section18: false
 
-    # We define the path ON the joon-win2022 C: drive
+    # --- 2. SURGICAL RULE SELECTION ---
+    # We disable the bulk of Section 1 and only enable the "Few" we want
+    win2022cis_rule_1_1_1: true  # Enforce password history
+    win2022cis_rule_1_1_2: true  # Maximum password age
+    win2022cis_rule_1_1_3: false # Example: specifically disabling a neighbor
+    
+    # --- PATH SETTINGS ---
     audit_out_file: 'C:\cis_audit_report.txt'
     web_root: 'C:\inetpub\wwwroot\compliance'
 
   tasks:
-    - name: Configure Surgical Rule Selection (Rule 1.1.1 Only)
-      ansible.builtin.set_fact:
-        win2022cis_section1: true
-        win2022cis_rule_1_1_1: true
-
     - name: Run Windows 2022 CIS Audit
       ansible.builtin.include_role:
         name: 'ansible-lockdown.windows_2022_cis'
-      # The role will run on the target, but we force the report to save locally on Windows
-      vars:
-        audit_out_file: 'C:\cis_audit_report.txt'
 
-    - name: Install IIS Web Server
-      ansible.windows.win_feature:
-        name: 'Web-Server'
-        state: present
-
-    - name: Create Web Directory for Report
-      ansible.windows.win_file:
-        path: '{{ web_root }}'
-        state: directory
-
-    - name: Read the raw CIS text report FROM THE WINDOWS SERVER
+    - name: Read Audit Report
       ansible.windows.win_shell: "Get-Content {{ audit_out_file }}"
       register: raw_audit_content
 
-    - name: Convert Text to HTML and Deploy to Windows Web Root
+    - name: Deploy to Local IIS
       ansible.windows.win_template:
         src: audit_template.html.j2
         dest: '{{ web_root }}\index.html'
-      # This ensures the template is rendered and placed on the target C: drive
 
-    - name: Setup IIS Website on Port 8080
-      community.windows.win_iis_website:
-        name: 'CIS_Audit_Display'
-        state: started
-        port: 8080
-        physical_path: '{{ web_root }}'
-
-    - name: Open Firewall Port 8080
+    - name: Ensure Firewall allows Port 8080
       community.windows.win_firewall_rule:
         name: 'Allow_HTTP_8080'
         localport: 8080
