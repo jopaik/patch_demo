@@ -24,7 +24,7 @@
         <h1>CIS Compliance Report</h1>
         <div class="meta">
             {# Calculate the EDT/EST time dynamically based on the current epoch #}
-            {% set timestamp_str = '%Y-%m-%d %H:%M:%S %Z' | strftime(ansible_date_time.epoch, tz='America/New_York') %}
+            {% set timestamp_str = '%Y-%m-%d %H:%M:%S EDT' | strftime((ansible_date_time.epoch | int) - 14400) %}
             
             <strong>Server:</strong> {{ inventory_hostname }}<br>
             <strong>Report Generated (NY Time):</strong> {{ timestamp_str }}
