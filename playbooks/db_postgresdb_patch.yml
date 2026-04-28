@@ -1,0 +1,53 @@
+---
+- name: Patch PostgreSQL Database Server
+  hosts: db_servers
+  become: yes
+  vars:
+    db_version: "15"
+    backup_path: "/var/backups/db_patch_backup_{{ ansible_date_time.date }}.sql"
+
+  tasks:
+    # --- STEP 1: PRE-PATCH BACKUP ---
+    - name: Ensure backup directory exists
+      ansible.builtin.file:
+        path: /var/backups
+        state: directory
+        mode: '0755'
+
+    - name: Perform a full SQL dump before patching
+      community.postgresql.postgresql_db:
+        state: dump
+        name: all
+        target: "{{ backup_path }}"
+      become_user: postgres
+
+    # --- STEP 2: APPLY BINARY PATCHES ---
+    - name: Check for PostgreSQL updates
+      ansible.builtin.dnf:
+        list: "postgresql{{ db_version }}-server"
+      register: updates_available
+
+    - name: Apply security patches to PostgreSQL binaries
+      ansible.builtin.dnf:
+        name: "postgresql{{ db_version }}-server"
+        state: latest
+      notify: Restart PostgreSQL
+
+    # --- STEP 3: FLUSH HANDLERS (Restart Service) ---
+    - name: Force restart to apply new binaries
+      ansible.builtin.meta: flush_handlers
+
+    # --- STEP 4: DATABASE-SPECIFIC SCHEMA UPDATE ---
+    # In Postgres, minor version updates don't always need this,
+    # but major ones or specific security fixes might require internal commands.
+    - name: Check if internal database update is needed
+      ansible.builtin.command: "vacuumdb --all --analyze-in-stages"
+      become_user: postgres
+      changed_when: false
+      comment: "This ensures statistics are updated for the new engine version"
+
+  handlers:
+    - name: Restart PostgreSQL
+      ansible.builtin.service:
+        name: "postgresql-{{ db_version }}"
+        state: restarted

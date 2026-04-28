@@ -1,0 +1,27 @@
+---
+- name: Patch Oracle Database using ansible-oracle role
+  hosts: oracle_servers
+  become: yes
+  become_user: oracle
+  vars:
+    # 1. Define the Oracle Home to target
+    oracle_home: "/u01/app/oracle/product/19.0.0/dbhome_1"
+    oracle_sid: "ORCL"
+    
+    # 2. Define the Patches to apply
+    # The role expects the patch zip to be in your 'oracle_stage' directory
+    oracle_sw_patches:
+      - { 
+          patch_id: '35354444', 
+          patch_spec: 'p35354444_190000_Linux-x86-64.zip', 
+          description: 'Jan 2026 Release Update',
+          state: 'present' 
+        }
+
+    # 3. Automation Settings
+    oracle_install_option: 'UPGRADE_DB' # Tells the role we are moving up
+    apply_patches_db: true              # Ensures opatch is triggered
+    run_datapatch: true                 # Automatically runs SQL logic after binaries
+
+  roles:
+    - role: oravirt.ansible_oracle

@@ -1,0 +1,50 @@
+---
+- name: Patch MongoDB and Upgrade Feature Compatibility
+  hosts: mongodb_servers
+  become: yes
+  vars:
+    mongo_version: "6.0"
+    backup_dir: "/var/backups/mongodb"
+
+  tasks:
+    - name: 1. Pre-Patch Backup
+      ansible.builtin.command: >
+        mongodump --out {{ backup_dir }}/{{ ansible_date_time.date }}
+      register: backup_result
+
+    - name: 2. Update MongoDB Binaries
+      ansible.builtin.dnf:
+        name: 
+          - mongodb-org
+          - mongodb-org-server
+          - mongodb-org-shell
+        state: latest
+      notify: Restart MongoDB
+
+    - name: 3. Ensure Service is Restarted
+      ansible.builtin.meta: flush_handlers
+
+    - name: 4. Wait for MongoDB to be Ready
+      ansible.builtin.wait_for:
+        port: 27017
+        timeout: 60
+
+    - name: 5. Check Current Feature Compatibility Version
+      community.mongodb.mongodb_shell:
+        login_host: localhost
+        eval: "db.adminCommand({getParameter: 1, featureCompatibilityVersion: 1})"
+      register: current_fcv
+      changed_when: false
+
+    - name: 6. Set Feature Compatibility Version to {{ mongo_version }}
+      community.mongodb.mongodb_shell:
+        login_host: localhost
+        eval: "db.adminCommand({setFeatureCompatibilityVersion: '{{ mongo_version }}'})"
+      # Only run this if the current FCV is lower than our target version
+      when: "mongo_version not in current_fcv.stdout"
+      register: fcv_result
+
+    - name: 7. Verify New FCV Status
+      ansible.builtin.debug:
+        msg: "Feature Compatibility is now set to {{ mongo_version }}"
+      when: fcv_result is changed
