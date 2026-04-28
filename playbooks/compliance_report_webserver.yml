@@ -101,5 +101,4 @@
   handlers:
     - name: Force Restart Apache
       delegate_to: joon-webserver
-      become: yes
-      ansible.builtin.shell: "systemctl restart httpd"
+      ansible.builtin.shell: "sudo systemctl restart httpd"
