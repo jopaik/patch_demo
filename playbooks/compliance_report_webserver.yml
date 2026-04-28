@@ -74,14 +74,19 @@
       run_once: true
       become: yes
       block:
-        - name: Disable SELinux (Permanent & Runtime)
-          block:
-            - ansible.builtin.selinux: { state: disabled }
-            - ansible.builtin.command: setenforce 0
+        - name: Update SELinux Config to Disabled
+          ansible.builtin.selinux:
+            state: disabled
+          ignore_errors: yes
+
+        - name: Apply Permissive Mode at Runtime
+          ansible.builtin.command: setenforce 0
           failed_when: false
 
         - name: Install Apache
-          ansible.builtin.dnf: { name: httpd, state: present }
+          ansible.builtin.dnf:
+            name: httpd
+            state: present
 
         - name: Configure custom Listen port 8080
           ansible.builtin.copy:
