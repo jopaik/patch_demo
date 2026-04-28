@@ -3,42 +3,6 @@
   hosts: joon-win2022
   gather_facts: yes
   vars:
-    setup_audit: true
-    run_audit: true
-    remediate: false
-
-    # --- 1. GLOBAL DISABLE ---
-    win2022cis_section1: true
-    win2022cis_section2: false
-    win2022cis_section3: false
-    win2022cis_section4: false
-    win2022cis_section5: false
-    win2022cis_section6: false
-    win2022cis_section7: false
-    win2022cis_section8: false
-    win2022cis_section9: false
-    win2022cis_section17: false
-    win2022cis_section18: false
-
-    # --- 2. CONNECTIVITY GUARDRAILS (Explicitly Disable Dangerous Rules) ---
-    # Section 2.2: User Rights (Prevents kicking your user out)
-    win2022cis_rule_2_2_1: false  # Access this computer from the network
-    win2022cis_rule_2_2_33: false # Allow log on through Remote Desktop Services
-    
-    # Section 2.3: Security Options (Prevents session/NTLM/UAC resets)
-    win2022cis_rule_2_3_1_1: false # Accounts: Block Microsoft accounts
-    win2022cis_rule_2_3_7_1: false # Devices: Restrict CD-ROM access (causes resets)
-    win2022cis_rule_2_3_11_8: false # Network security: LAN Manager auth level
-    win2022cis_rule_2_3_17_2: false # UAC: Admin Approval Mode (The one that failed earlier)
-    
-    # Section 9: Firewall (Prevents blocking WinRM ports)
-    win2022cis_rule_9_1_1: false  # Windows Firewall: Domain: State
-    win2022cis_rule_9_2_1: false  # Windows Firewall: Private: State
-
-    # --- 3. SURGICAL RULE SELECTION (Password Policy Only) ---
-    win2022cis_rule_1_1_1: true
-    win2022cis_rule_1_1_2: true
-    
     # --- PATH SETTINGS ---
     audit_out_file: 'C:\cis_audit_report.txt'
     web_root: 'C:\inetpub\wwwroot\compliance'
