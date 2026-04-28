@@ -7,9 +7,11 @@
     web_root: 'C:\\inetpub\\wwwroot\\compliance'
 
   tasks:
-    - name: Get current time in New York
+    - name: Get current time in New York (Alternative now method)
       ansible.builtin.set_fact:
-        ny_time: "{{ now(tz='America/New_York').strftime('%Y-%m-%d %H:%M:%S') }}"
+        # 1. Get current UTC time
+        # 2. Subtract 4 hours (New York Daylight Time)
+        ny_time: "{{ (now(utc=true) - timedelta(hours=4)).strftime('%Y-%m-%d %H:%M:%S') }}" 
         
     # 1. PREREQUISITE: Install IIS (Fixes the "W3SVC not found" error)
     - name: Ensure IIS and Management Tools are installed
