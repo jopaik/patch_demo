@@ -1,7 +1,6 @@
 ---
-- name: Phase 1 - Audit Targeted and Total Missing Patches
-  hosts: jp_rhel, jp_windows
-  become: no
+- name: Phase 1 & 2 - Integrated Security Audit and Centralized Reporting
+  hosts: jp_rhel, jp_windows, jp_webserver
   gather_facts: yes
   vars:
     # These are the default targets if no extra vars are passed
@@ -9,12 +8,12 @@
     target_kb_ids: "{{ input_kb_ids | default(['KB4052623', 'KB2267602']) }}"
 
   tasks:
-    - name: Save Audit IDs as Facts for Web Reporting
+    - name: Save Audit IDs as Facts
       ansible.builtin.set_fact:
         global_cve_ids: "{{ cve_advisory_ids }}"
         global_kb_ids: "{{ target_kb_ids }}"
 
-    # --- RHEL AUDIT & DISCOVERY ---
+    # --- RHEL AUDIT BLOCK ---
     - name: RHEL Audit Block
       when: ansible_os_family == "RedHat"
       become: yes
@@ -37,62 +36,44 @@
 
         - name: Set RHEL Compliance Facts
           ansible.builtin.set_fact:
-            missing_targets: "{{ cve_advisory_ids | select('in', rhel_target_check.stdout) | list }}"
-            all_unpatched: "{{ rhel_all_check.stdout_lines | map('regex_replace', '^\\s*(\\S+).*$', '\\1') | select('match', '^(RHSA|CVE|RHBA|RHEA)') | list }}"
-            compliance_status: "{{ 'VULNERABLE' if (cve_advisory_ids | select('in', rhel_target_check.stdout) | list | length > 0) else 'COMPLIANT' }}"
-            reboot_pending: "{{ 'YES' if rhel_reboot_check.rc != 0 else 'NO' }}"
-            target_id_list: "{{ cve_advisory_ids | join(', ') }}"
+            missing_targets: "{{ cve_advisory_ids | select('in', rhel_target_check.stdout | default('')) | list }}"
+            all_unpatched: "{{ rhel_all_check.stdout_lines | default([]) | map('regex_replace', '^\\s*(\\S+).*$', '\\1') | select('match', '^(RHSA|CVE|RHBA|RHEA)') | list }}"
+            compliance_status: "{{ 'VULNERABLE' if (cve_advisory_ids | select('in', rhel_target_check.stdout | default('')) | list | length > 0) else 'COMPLIANT' }}"
+            reboot_pending: "{{ 'YES' if rhel_reboot_check.rc | default(0) != 0 else 'NO' }}"
 
-    # --- WINDOWS AUDIT & DISCOVERY ---
+    # --- WINDOWS AUDIT BLOCK ---
     - name: Windows Audit Block
       when: ansible_os_family == "Windows"
       block:
-        - name: Discover ALL Missing Windows KBs (WUA Agent)
+        - name: Discover ALL Missing Windows KBs
           ansible.windows.win_updates:
             category_names: [SecurityUpdates, CriticalUpdates]
             state: searched
           register: win_all_check
 
-        - name: Check Windows for Targeted KBs (Smart Logic)
+        - name: Check Windows for Targeted KBs
           ansible.windows.win_shell: |
             $targetId = "{{ item }}".ToUpper().Replace("KB", "")
-            $allMissing = @({{ win_all_check.updates | map(attribute='kb') | flatten | map('regex_replace', '^', "'") | map('regex_replace', '$', "'") | join(',') }})
-            
+            $allMissing = @({{ (win_all_check.updates | default([])) | map(attribute='kb') | flatten | map('regex_replace', '^', "'") | map('regex_replace', '$', "'") | join(',') | default("''") }})
             $installed = Get-HotFix | Where-Object { $_.HotFixID -match $targetId }
-            $isNeeded = $allMissing -contains $targetId
-
-            if ($installed) { exit 0 } elseif (-not $isNeeded) { exit 0 } else { exit 1 }
+            if ($installed) { exit 0 } elseif ($allMissing -contains $targetId) { exit 1 } else { exit 0 }
           loop: "{{ target_kb_ids }}"
           register: win_target_check
           failed_when: false 
           changed_when: false
 
-        - name: Check Windows Reboot Status
-          ansible.windows.win_shell: |
-            $reboot = $false
-            $paths = @("HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired","HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending")
-            foreach ($p in $paths) { if (Test-Path $p) { $reboot = $true } }
-            return $reboot
-          register: win_reboot_check
-          failed_when: false
-          changed_when: false
-
         - name: Set Windows Compliance Facts
           ansible.builtin.set_fact:
-            missing_targets: "{{ win_target_check.results | selectattr('rc', 'ne', 0) | map(attribute='item') | list }}"
-            all_unpatched: "{{ win_all_check.updates | map(attribute='kb') | flatten | map('regex_replace', '^', 'KB') | unique | list }}"
-            compliance_status: "{{ 'VULNERABLE' if (win_target_check.results | selectattr('rc', 'ne', 0) | list | length > 0) else 'COMPLIANT' }}"
-            reboot_pending: "{{ 'YES' if win_reboot_check.stdout | trim == 'True' else 'NO' }}"
-            target_id_list: "{{ target_kb_ids | join(', ') }}"
+            missing_targets: "{{ win_target_check.results | selectattr('rc', 'defined') | selectattr('rc', 'ne', 0) | map(attribute='item') | list }}"
+            all_unpatched: "{{ (win_all_check.updates | default([])) | map(attribute='kb') | flatten | map('regex_replace', '^', 'KB') | unique | list }}"
+            compliance_status: "{{ 'VULNERABLE' if (win_target_check.results | selectattr('rc', 'defined') | selectattr('rc', 'ne', 0) | list | length > 0) else 'COMPLIANT' }}"
+            reboot_pending: "{{ 'YES' if (win_updates_reboot_needed | default(false)) else 'NO' }}"
 
-# ==========================================
-# PHASE 2: GENERATE REPORT WITH CONFLICT FIXES
-# ==========================================
-- name: Phase 2 - Deploy Centralized Report Webserver
-  hosts: jp_webserver
-  become: yes
-  tasks:
+    # --- WEBSERVER CONFIGURATION & REPORTING ---
     - name: Webserver Setup & Conflict Resolution
+      delegate_to: joon-webserver
+      run_once: true
+      become: yes
       block:
         - name: Update SELinux Config to Disabled
           ansible.builtin.selinux: { state: disabled }
@@ -100,101 +81,82 @@
         - name: Apply Permissive Mode at Runtime
           ansible.builtin.command: setenforce 0
           register: selinux_runtime
-          failed_when: false  # Correctly placed on the task, not the block
+          failed_when: false
 
         - name: Install Apache
           ansible.builtin.dnf: { name: httpd, state: present }
 
-        - name: Resolve Port Conflict - Scrub default Listen 80
-          ansible.builtin.replace:
-            path: /etc/httpd/conf/httpd.conf
-            regexp: '^Listen .*'
-            replace: '# Listen removed by Ansible'
-
         - name: Configure custom Listen port 8080
           ansible.builtin.copy:
             dest: /etc/httpd/conf.d/ports.conf
-            content: |
-              # Port configuration for Security Dashboard
-              Listen 8080
+            content: "Listen 8080"
 
-        - name: Open Firewall Port 8080
-          ansible.posix.firewalld: { port: 8080/tcp, permanent: yes, state: enabled, immediate: yes }
-
-        - name: Ensure Apache is started and enabled
+        - name: Ensure Apache is started
           ansible.builtin.service: { name: httpd, state: started, enabled: yes }
 
-    - name: Generate HTML Compliance Report
-      ansible.builtin.copy:
-        dest: "/var/www/html/index.html"
-        content: |
-          <!DOCTYPE html>
-          <html>
-          <head>
-              <title>Security Audit Report</title>
-              <style>
-                  body { font-family: 'Segoe UI', sans-serif; margin: 20px; background-color: #f8f9fa; }
-                  .container { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); width: 95%; margin: auto; }
-                  .scope-box { background: #e9ecef; padding: 15px; border-radius: 8px; margin-bottom: 20px; border-left: 5px solid #212529; }
-                  .scope-label { font-weight: bold; color: #495057; text-transform: uppercase; font-size: 12px; display: block; margin-bottom: 5px; }
-                  .scope-list { font-family: monospace; font-size: 14px; color: #343a40; line-height: 1.6; }
-                  table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 13px; }
-                  th, td { padding: 12px; text-align: left; border-bottom: 1px solid #eee; vertical-align: top; }
-                  th { background-color: #212529; color: white; text-transform: uppercase; }
-                  .VULNERABLE, .REBOOT-YES { color: #dc3545; font-weight: bold; background-color: #f8d7da; padding: 3px 8px; border-radius: 4px; }
-                  .COMPLIANT, .REBOOT-NO { color: #198754; font-weight: bold; background-color: #d1e7dd; padding: 3px 8px; border-radius: 4px; }
-                  .scroller { max-height: 80px; overflow-y: auto; font-size: 11px; color: #666; border: 1px solid #f0f0f0; padding: 5px; background: #fafafa; }
-              </style>
-          </head>
-          <body>
-              <div class="container">
-                  <h1>Infrastructure Security Dashboard</h1>
-                  <p><strong>Audit Timestamp:</strong> {{ now(z='America/New_York', fmt='%Y-%m-%d %H:%M:%S') }}</p>
-                  
-                  <div class="scope-box">
-                      <span class="scope-label">Targets Under Review:</span>
-                      <div class="scope-list">
-                          {% set rhel_node = groups['jp_rhel'] | first if groups['jp_rhel'] is defined else none %}
-                          {% set win_node = groups['jp_windows'] | first if groups['jp_windows'] is defined else none %}
-                          
-                          <strong>RHEL Advisories:</strong> 
-                          {{ hostvars[rhel_node]['global_cve_ids'] | join(', ') if rhel_node and hostvars[rhel_node]['global_cve_ids'] is defined else 'N/A' }}<br>
-                          
-                          <strong>Windows KBs:</strong> 
-                          {{ hostvars[win_node]['global_kb_ids'] | join(', ') if win_node and hostvars[win_node]['global_kb_ids'] is defined else 'N/A' }}
+        - name: Generate HTML Compliance Report
+          ansible.builtin.copy:
+            dest: "/var/www/html/index.html"
+            mode: '0644'
+            content: |
+              <!DOCTYPE html>
+              <html>
+              <head>
+                  <title>Security Audit Report</title>
+                  <style>
+                      body { font-family: 'Segoe UI', sans-serif; margin: 20px; background-color: #f8f9fa; }
+                      .container { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); width: 95%; margin: auto; }
+                      .scope-box { background: #e9ecef; padding: 15px; border-radius: 8px; margin-bottom: 20px; border-left: 5px solid #212529; }
+                      .scope-label { font-weight: bold; color: #495057; text-transform: uppercase; font-size: 12px; display: block; margin-bottom: 5px; }
+                      table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 13px; }
+                      th, td { padding: 12px; text-align: left; border-bottom: 1px solid #eee; }
+                      th { background-color: #212529; color: white; text-transform: uppercase; }
+                      .VULNERABLE { color: #dc3545; font-weight: bold; background-color: #f8d7da; padding: 3px 8px; border-radius: 4px; }
+                      .COMPLIANT { color: #198754; font-weight: bold; background-color: #d1e7dd; padding: 3px 8px; border-radius: 4px; }
+                      .scroller { max-height: 80px; overflow-y: auto; font-size: 11px; color: #666; border: 1px solid #f0f0f0; padding: 5px; background: #fafafa; }
+                  </style>
+              </head>
+              <body>
+                  <div class="container">
+                      <h1>Infrastructure Security Dashboard</h1>
+                      <p><strong>Audit Timestamp:</strong> {{ now(fmt='%Y-%m-%d %H:%M:%S') }}</p>
+                      
+                      <div class="scope-box">
+                          <span class="scope-label">Targets Under Review:</span>
+                          {% set rhel_node = groups['jp_rhel'] | first | default(none) %}
+                          {% set win_node = groups['jp_windows'] | first | default(none) %}
+                          <strong>RHEL:</strong> {{ hostvars[rhel_node].global_cve_ids | default([]) | join(', ') if rhel_node else 'N/A' }}<br>
+                          <strong>Windows:</strong> {{ hostvars[win_node].global_kb_ids | default([]) | join(', ') if win_node else 'N/A' }}
                       </div>
-                  </div>
 
-                  <table>
-                      <tr>
-                          <th>Host Information</th>
-                          <th>Target Status</th>
-                          <th>Reboot</th>
-                          <th>Missing Targeted</th>
-                          <th>Full System Vulnerabilities</th>
-                      </tr>
-                      {% for host in groups['all'] %}
-                      {% if hostvars[host]['compliance_status'] is defined %}
-                      <tr>
-                          <td><strong>{{ host }}</strong><br><small>{{ hostvars[host]['ansible_os_family'] }}</small></td>
-                          <td><span class="{{ hostvars[host]['compliance_status'] }}">{{ hostvars[host]['compliance_status'] }}</span></td>
-                          <td><span class="REBOOT-{{ hostvars[host]['reboot_pending'] }}">{{ hostvars[host]['reboot_pending'] }}</span></td>
-                          <td>{{ hostvars[host]['missing_targets'] | join(', ') if hostvars[host]['missing_targets'] else 'None' }}</td>
-                          <td>
-                              <div class="scroller">
-                                  {{ hostvars[host]['all_unpatched'] | join(', ') if hostvars[host]['all_unpatched'] else 'Fully Patched' }}
-                              </div>
-                          </td>
-                      </tr>
-                      {% endif %}
-                      {% endfor %}
-                  </table>
-              </div>
-          </body>
-          </html>
-        mode: '0644'
-      notify: Restart Apache
+                      <table>
+                          <tr>
+                              <th>Host</th>
+                              <th>Status</th>
+                              <th>Missing Targeted</th>
+                              <th>Full System Vulnerabilities</th>
+                          </tr>
+                          {% for host in groups['all'] %}
+                            {% if host != 'joon-webserver' and hostvars[host].compliance_status is defined %}
+                            <tr>
+                                <td><strong>{{ host }}</strong></td>
+                                <td><span class="{{ hostvars[host].compliance_status }}">{{ hostvars[host].compliance_status }}</span></td>
+                                <td>{{ hostvars[host].missing_targets | default([]) | join(', ') if hostvars[host].missing_targets else 'None' }}</td>
+                                <td>
+                                    <div class="scroller">
+                                        {{ hostvars[host].all_unpatched | default([]) | join(', ') if hostvars[host].all_unpatched else 'Clean' }}
+                                    </div>
+                                </td>
+                            </tr>
+                            {% endif %}
+                          {% endfor %}
+                      </table>
+                  </div>
+              </body>
+              </html>
+          notify: Restart Apache
 
   handlers:
     - name: Restart Apache
+      delegate_to: joon-webserver
       ansible.builtin.service: { name: httpd, state: restarted }
