@@ -149,7 +149,7 @@
           <body>
               <div class="container">
                   <h1>Infrastructure Security Dashboard</h1>
-                  <p><strong>Audit Timestamp:</strong> {{ now(fmt='%Y-%m-%d %H:%M:%S') }}</p>
+                  <p><strong>Audit Timestamp:</strong> {{ now(z='America/New_York', fmt='%Y-%m-%d %H:%M:%S') }}</p>
                   
                   <div class="scope-box">
                       <span class="scope-label">Targets Under Review:</span>
