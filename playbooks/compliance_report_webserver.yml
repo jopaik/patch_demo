@@ -67,12 +67,25 @@
             reboot_pending: "{{ 'YES' if (win_updates_reboot_needed | default(false)) else 'NO' }}"
 
     # --- WEBSERVER DEPLOYMENT SECTION ---
-    # Instead of looping a block (invalid), we run this block only on hosts in the jp_webserver group.
     - name: Configure Webserver
       when: inventory_hostname in groups['jp_webserver']
       become: yes
       block:
-        - name: Install and Configure Apache
+        - name: Ensure SELinux allows Apache on port 8080
+          community.general.seport:
+            ports: 8080
+            proto: tcp
+            setype: http_port_t
+            state: present
+
+        - name: Open port 8080 in firewalld
+          ansible.posix.firewalld:
+            port: 8080/tcp
+            permanent: yes
+            state: enabled
+            immediate: yes
+
+        - name: Install Apache
           ansible.builtin.dnf:
             name: httpd
             state: present
@@ -105,7 +118,6 @@
                   <div class="container">
                       <h1>Infrastructure Security Dashboard</h1>
                       <p>Audit Timestamp: {{ now(fmt='%Y-%m-%d %H:%M:%S') }}</p>
-                      
                       <table>
                           <tr>
                               <th>Host</th>
@@ -119,11 +131,7 @@
                                 <td><strong>{{ h }}</strong></td>
                                 <td><span class="{{ hostvars[h].compliance_status }}">{{ hostvars[h].compliance_status }}</span></td>
                                 <td>{{ hostvars[h].missing_targets | join(', ') if hostvars[h].missing_targets else 'None' }}</td>
-                                <td>
-                                    <div class="scroller">
-                                        {{ hostvars[h].all_unpatched | join(', ') if hostvars[h].all_unpatched else 'Clean' }}
-                                    </div>
-                                </td>
+                                <td><div class="scroller">{{ hostvars[h].all_unpatched | join(', ') if hostvars[h].all_unpatched else 'Clean' }}</div></td>
                             </tr>
                             {% endif %}
                           {% endfor %}
