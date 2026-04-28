@@ -168,4 +168,4 @@
   handlers:
     - name: Alternative Force Restart
       delegate_to: joon-webserver
-      ansible.builtin.shell: "systemctl restart httpd || (killall -9 httpd && systemctl start httpd)"
+      ansible.builtin.shell: "sudo systemctl restart httpd"
