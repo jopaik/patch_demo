@@ -8,10 +8,11 @@
     web_root: 'C:\inetpub\wwwroot'
 
   tasks:
-    - name: Get current time in New York (Handles DST automatically)
+    - name: Get current time in EDT (Manual Offset)
       ansible.builtin.set_fact:
-        ny_time: "{{ now(utc=true, tz='America/New_York').strftime('%Y-%m-%d %H:%M:%S') }}"
-        
+      # 14400 seconds = 4 hours (UTC - 4)
+        ny_time: "{{ '%Y-%m-%d %H:%M:%S EDT' | strftime((ansible_date_time.epoch | int) - 14400) }}"
+      
     # 1. PREREQUISITE: Install IIS
     - name: Ensure IIS and Management Tools are installed
       ansible.windows.win_feature:

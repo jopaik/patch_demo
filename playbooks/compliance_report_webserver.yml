@@ -11,7 +11,7 @@
       ansible.builtin.set_fact:
         # 14400 seconds = 4 hours (UTC - 4)
         ny_time: "{{ '%Y-%m-%d %H:%M:%S EDT' | strftime((ansible_date_time.epoch | int) - 14400) }}"
-        
+
     - name: Save Audit IDs as Facts
       ansible.builtin.set_fact:
         global_cve_ids: "{{ cve_advisory_ids }}"
@@ -101,6 +101,5 @@
   handlers:
     - name: Force Restart Apache
       delegate_to: joon-webserver
-      ansible.builtin.systemd:
-        name: httpd
-        state: restarted
+      become: yes
+      ansible.builtin.shell: "systemctl restart httpd"
