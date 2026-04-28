@@ -53,6 +53,10 @@
         win2022cis_rule_1_1_1: true
         win2022cis_rule_1_1_2: true
         win2022cis_rule_1_1_3: true
+        
+        win2022cis_rule_18.7.7: false
+
+
 
     # 3. REPORT PREP: Read and Deploy
     - name: Read Audit Report
