@@ -23,16 +23,19 @@
     <div class="card">
         <h1>CIS Compliance Report</h1>
         <div class="meta">
+            {# Define the timestamp as a single string variable locally to avoid type errors #}
+            {% set timestamp_str = ansible_date_time.date ~ ' ' ~ ansible_date_time.time %}
+            
             <strong>Server:</strong> {{ inventory_hostname }}<br>
-            <strong>Report Generated:</strong> {{ ny_time }}
+            <strong>Report Generated (NY Time):</strong> {{ timestamp_str }}
         </div>
 
         <pre>
 {# 
-  This regex replaces the original Execution Date with the timestamp 
-  captured during Ansible fact gathering.
+  We use the pre-defined timestamp_str here. 
+  The + operator is safer for simple string replacement in this context.
 #}
-{{ raw_audit_content.stdout | regex_replace('Execution Date:\s+\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}', 'Execution Date:     ' ~ ansible_date_time.date ~ ' ' ~ ansible_date_time.time) }}
+{{ raw_audit_content.stdout | default('') | regex_replace('Execution Date:\s+\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}', 'Execution Date:     ' + timestamp_str) }}
         </pre>
     </div>
 </body>
