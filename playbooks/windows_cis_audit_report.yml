@@ -53,8 +53,8 @@
         win2022cis_rule_1_1_1: true
         win2022cis_rule_1_1_2: true
         win2022cis_rule_1_1_3: true
-        
-        win2022cis_rule_18.7.7: false
+
+        win2022cis_rule_18_7_7: false
 
 
 
