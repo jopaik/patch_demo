@@ -2,10 +2,21 @@
 - name: Targeted Windows Security Patching
   hosts: jp_windows
   vars:
-    # Changed to a list format
-    target_kb_ids: "{{ input_kb_ids | default(['KB4052623', 'KB2267602']) }}"
+    # This is our fallback if input_kb_ids is completely empty
+    default_kb_list: ['KB4052623', 'KB2267602']
 
   tasks:
+    - name: Ensure target_kb_ids is a list
+      ansible.builtin.set_fact:
+        target_kb_ids: >-
+          {% if input_kb_ids is defined and input_kb_ids is string and input_kb_ids | length > 0 %}
+            {{ input_kb_ids.split(',') | map('trim') | list }}
+          {% elif input_kb_ids is defined and input_kb_ids is iterable and input_kb_ids is not string %}
+            {{ input_kb_ids }}
+          {% else %}
+            {{ default_kb_list }}
+          {% endif %}
+
     - name: Search and Install specific updates
       ansible.windows.win_updates:
         category_names:
@@ -19,13 +30,13 @@
 
     - name: Set cacheable reboot flag
       ansible.builtin.set_fact:
-        windows_reboot_needed: "{{ kb_patch_result.reboot_required }}"
+        windows_reboot_needed: "{{ kb_patch_result.reboot_required | default(false) }}"
         cacheable: yes
 
     - name: Audit Output
       ansible.builtin.debug:
         msg: 
           - "Target KBs: {{ target_kb_ids | join(', ') }}"
-          - "Found matching updates: {{ kb_patch_result.found_update_count }}"
-          - "Installed successfully: {{ kb_patch_result.installed_update_count }}"
+          - "Found matching updates: {{ kb_patch_result.found_update_count | default(0) }}"
+          - "Installed successfully: {{ kb_patch_result.installed_update_count | default(0) }}"
           - "Reboot Required (Cached): {{ windows_reboot_needed }}"
