@@ -27,35 +27,35 @@
       ansible.windows.win_reboot:
       when: iis_install.reboot_required
 
-    # # 2. AUDIT: Run Windows 2022 CIS Audit (Surgical Run)
-    # - name: Run Windows 2022 CIS Audit
-    #   ansible.builtin.include_role:
-    #     name: 'ansible-lockdown.windows_2022_cis'
-    #   vars:
-    #     setup_audit: true
-    #     run_audit: true
-    #     remediate: false
-    #     # Mapping your custom file path to the role's internal variable
-    #     win2022cis_output_file: '{{ audit_out_file }}'
+    # 2. AUDIT: Run Windows 2022 CIS Audit (Surgical Run)
+    - name: Run Windows 2022 CIS Audit
+      ansible.builtin.include_role:
+        name: 'ansible-lockdown.windows_2022_cis'
+      vars:
+        setup_audit: true
+        run_audit: true
+        remediate: false
+        # Mapping your custom file path to the role's internal variable
+        win2022cis_output_file: '{{ audit_out_file }}'
         
-    #     win2022cis_skip_for_speed: true
-    #     win2022cis_section1: true
-    #     win2022cis_section2: false
-    #     win2022cis_section3: false
-    #     win2022cis_section4: false
-    #     win2022cis_section5: false
-    #     win2022cis_section6: false
-    #     win2022cis_section7: false
-    #     win2022cis_section8: false
-    #     win2022cis_section9: false
-    #     win2022cis_section17: false
-    #     win2022cis_section18: false
+        win2022cis_skip_for_speed: true
+        win2022cis_section1: true
+        win2022cis_section2: false
+        win2022cis_section3: false
+        win2022cis_section4: false
+        win2022cis_section5: false
+        win2022cis_section6: false
+        win2022cis_section7: false
+        win2022cis_section8: false
+        win2022cis_section9: false
+        win2022cis_section17: false
+        win2022cis_section18: false
 
-    #     win2022cis_rule_1_1_1: true
-    #     win2022cis_rule_1_1_2: true
-    #     win2022cis_rule_1_1_3: true
+        win2022cis_rule_1_1_1: true
+        win2022cis_rule_1_1_2: true
+        win2022cis_rule_1_1_3: true
 
-    #     win2022cis_rule_18_7_7: false
+        win2022cis_rule_18_7_7: false
 
 
 
