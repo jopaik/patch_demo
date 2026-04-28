@@ -7,7 +7,7 @@
     web_root: 'C:\\inetpub\\wwwroot\\compliance'
 
   tasks:
-    - name: Run Windows 2022 CIS Audit
+    - name: Run Windows 2022 CIS Audit (Section 1 Only)
       ansible.builtin.include_role:
         name: 'ansible-lockdown.windows_2022_cis'
       vars:
@@ -15,7 +15,11 @@
         run_audit: true
         remediate: false
         audit_out_file: "{{ audit_out_file }}"
+        
+        # Optimization: Skip deep discovery
         win2022cis_skip_for_speed: true
+        
+        # Scope limit
         win2022cis_section1: true
         win2022cis_section2: false
         win2022cis_section3: false
@@ -27,11 +31,8 @@
         win2022cis_section9: false
         win2022cis_section17: false
         win2022cis_section18: false
-        win2022cis_rule_2_2_1: false
-        win2022cis_rule_2_2_33: false
-        win2022cis_rule_2_3_17_2: false
-        win2022cis_rule_9_1_1: false
-        win2022cis_rule_9_2_1: false
+
+        # Specific rules
         win2022cis_rule_1_1_1: true
         win2022cis_rule_1_1_2: true
         win2022cis_rule_1_1_3: true
@@ -45,33 +46,37 @@
         path: "{{ web_root }}"
         state: directory
 
-    - name: Deploy to Local IIS
+    - name: Deploy index.html via Template
       ansible.windows.win_template:
         src: audit_template.html.j2
         dest: "{{ web_root }}/index.html"
 
-    - name: Ensure Default Web Site is listening on Port 8080
+    - name: Ensure IIS Binding for Port 8080 (Native PowerShell)
       ansible.windows.win_shell: |
         Import-Module WebAdministration
-        if (!(Get-WebBinding -Name "Default Web Site" -Port 8080 -Protocol "http")) {
-            New-WebBinding -Name "Default Web Site" -Port 8080 -Protocol "http"
-            Write-Output "Binding created"
-        } else {
-            Write-Output "Binding already exists"
+        if (!(Get-WebBinding -Name "Default Web Site" -Port 8080)) {
+            New-WebBinding -Name "Default Web Site" -Port 8080 -Protocol http
+            exit 0 # Change occurred
         }
-      register: binding_result
-      changed_when: "'created' in binding_result.stdout"
+        exit 100 # No change needed
+      register: binding_shell
+      changed_when: binding_shell.rc == 0
+      failed_when: binding_shell.rc not in [0, 100]
 
-    # NEW TASK 2: Map the folder as an IIS Virtual Directory
-    - name: Setup IIS Virtual Directory for Compliance Report
-      community.windows.win_iis_virtual_directory:
-        site: "Default Web Site"
-        name: "compliance"
-        physical_path: "{{ web_root }}"
-        state: present
+    - name: Setup IIS Virtual Directory (Native PowerShell)
+      ansible.windows.win_shell: |
+        Import-Module WebAdministration
+        if (!(Get-WebVirtualDirectory -Site "Default Web Site" -Name "compliance")) {
+            New-WebVirtualDirectory -Site "Default Web Site" -Name "compliance" -PhysicalPath "{{ web_root }}"
+            exit 0 # Change occurred
+        }
+        exit 100 # No change needed
+      register: vdir_shell
+      changed_when: vdir_shell.rc == 0
+      failed_when: vdir_shell.rc not in [0, 100]
 
     - name: Ensure Firewall allows Port 8080
-      community.windows.win_firewall_rule:
+      ansible.windows.win_firewall_rule:
         name: 'Allow_HTTP_8080'
         localport: 8080
         action: allow
