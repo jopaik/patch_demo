@@ -9,13 +9,7 @@
   tasks:
     - name: Get current time in EDT (Manual Offset)
       ansible.builtin.set_fact:
-        # 14400 seconds = 4 hours (UTC - 4)
         ny_time: "{{ '%Y-%m-%d %H:%M:%S EDT' | strftime((ansible_date_time.epoch | int) - 14400) }}"
-
-    - name: Save Audit IDs as Facts
-      ansible.builtin.set_fact:
-        global_cve_ids: "{{ cve_advisory_ids }}"
-        global_kb_ids: "{{ target_kb_ids }}"
 
     # --- RHEL AUDIT BLOCK ---
     - name: RHEL Audit Block
@@ -27,9 +21,16 @@
           register: rhel_target_check
           changed_when: false
 
+        - name: Get ALL Missing Security Advisories
+          ansible.builtin.command: "dnf updateinfo list security --quiet"
+          register: rhel_all_vulns
+          changed_when: false
+
         - name: Set RHEL Compliance Facts
           ansible.builtin.set_fact:
             missing_targets: "{{ cve_advisory_ids | select('in', rhel_target_check.stdout | default('')) | list }}"
+            # Extracting all RHSA/CVE IDs from the broad security scan
+            full_vulns: "{{ rhel_all_vulns.stdout_lines | map('regex_search', '(RHSA-\\d{4}:\\d+|CVE-\\d{4}-\\d+)') | select('string') | list | unique }}"
             compliance_status: "{{ 'VULNERABLE' if (cve_advisory_ids | select('in', rhel_target_check.stdout | default('')) | list | length > 0) else 'COMPLIANT' }}"
 
     # --- WINDOWS AUDIT BLOCK ---
@@ -45,9 +46,11 @@
         - name: Set Windows Compliance Facts
           ansible.builtin.set_fact:
             missing_targets: "{{ win_all_check.updates | selectattr('kb', 'defined') | map(attribute='kb') | select('in', target_kb_ids) | list }}"
-            compliance_status: "{{ 'VULNERABLE' if (win_all_check.updates | selectattr('kb', 'defined') | map(attribute='kb') | select('in', target_kb_ids) | list | length > 0) else 'COMPLIANT' }}"
+            # Capturing every missing KB found in the scan
+            full_vulns: "{{ win_all_check.updates | selectattr('kb', 'defined') | map(attribute='kb') | list }}"
+            compliance_status: "{{ 'VULNERABLE' if (missing_targets | length > 0) else 'COMPLIANT' }}"
 
-    # --- WEBSERVER CONFIGURATION (The Reporting Node) ---
+    # --- WEBSERVER CONFIGURATION ---
     - name: Webserver Setup & Reporting
       delegate_to: joon-webserver
       run_once: true
@@ -61,15 +64,16 @@
               <!DOCTYPE html>
               <html>
               <head>
-                  <title>Security Audit Report</title>
+                  <title>Security Audit Report powered by Ansible</title>
                   <style>
                       body { font-family: 'Segoe UI', sans-serif; margin: 20px; background-color: #f8f9fa; }
-                      .container { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); width: 95%; margin: auto; }
-                      table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-                      th, td { padding: 12px; text-align: left; border-bottom: 1px solid #eee; }
+                      .container { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); width: 98%; margin: auto; }
+                      table { width: 100%; border-collapse: collapse; margin-top: 20px; table-layout: fixed; }
+                      th, td { padding: 12px; text-align: left; border-bottom: 1px solid #eee; vertical-align: top; word-wrap: break-word; }
                       th { background-color: #212529; color: white; }
                       .VULNERABLE { color: #dc3545; font-weight: bold; }
                       .COMPLIANT { color: #198754; font-weight: bold; }
+                      .vuln-tag { display: inline-block; background: #eee; padding: 2px 6px; border-radius: 4px; margin: 2px; font-size: 11px; font-family: monospace; }
                   </style>
               </head>
               <body>
@@ -79,9 +83,10 @@
                       
                       <table>
                           <tr>
-                              <th>Host</th>
-                              <th>Status</th>
-                              <th>Missing Targeted</th>
+                              <th style="width: 15%;">Host</th>
+                              <th style="width: 10%;">Status</th>
+                              <th style="width: 25%;">Missing Targeted (High Priority)</th>
+                              <th style="width: 50%;">Full System Vulnerabilities (All Missing KBs/CVEs)</th>
                           </tr>
                           {% for host in groups['all'] %}
                             {% if hostvars[host].compliance_status is defined %}
@@ -89,6 +94,15 @@
                                 <td>{{ host }}</td>
                                 <td><span class="{{ hostvars[host].compliance_status }}">{{ hostvars[host].compliance_status }}</span></td>
                                 <td>{{ hostvars[host].missing_targets | join(', ') if hostvars[host].missing_targets else 'None' }}</td>
+                                <td>
+                                    {% if hostvars[host].full_vulns %}
+                                        {% for vuln in hostvars[host].full_vulns %}
+                                            <span class="vuln-tag">{{ vuln }}</span>
+                                        {% endfor %}
+                                    {% else %}
+                                        None
+                                    {% endif %}
+                                </td>
                             </tr>
                             {% endif %}
                           {% endfor %}
