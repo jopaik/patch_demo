@@ -1,5 +1,4 @@
----
-- name: Windows 2019 CIS Audit & Local Web Hosting (Easy Checks Only)
+- name: Windows 2019 CIS Audit & Local Web Hosting
   hosts: joon-win2019
   become: no
   gather_facts: yes
@@ -8,9 +7,8 @@
     run_audit: true
     remediate: false
 
-    # --- THE MASSIVE SKIP LIST ---
-    # We disable entire sections to prevent connection drops and deep system changes.
-    # We are only allowing Section 1 (Password/Lockout) and specific safe items.
+    # --- 1. DISABLE EVERYTHING BY DEFAULT ---
+    win2019cis_section1: false
     win2019cis_section2: false
     win2019cis_section3: false
     win2019cis_section4: false
@@ -22,84 +20,57 @@
     win2019cis_section17: false
     win2019cis_section18: false
 
-    # Specifically skipping the connection-killers just in case a section is partially enabled
-    win2019cis_skip_list: 
-      - "18.5.7"   
-      - "18.5.10"  
-      - "18.5.11" 
-      - "18.5.12" 
-      - "18.5.4"
-      - "2.3.17.4" 
-      - "2.3.17.1" 
-      - "2.3.17.3" 
-      - "2.2.3" 
-      - "2.2.34"
-
     # --- PATH SETTINGS ---
-    target_report: "C:\\ansible_audit\\report.html"
-    web_root: "C:\\inetpub\\wwwroot\\compliance"
+    target_report: 'C:\ansible_audit\report.html'
+    web_root: 'C:\inetpub\wwwroot\compliance'
 
   tasks:
     - name: Prepare Audit Environment
       ansible.windows.win_file:
-        path: "C:\\ansible_audit"
-        state: "{{ item }}"
+        path: 'C:\ansible_audit'
+        state: '{{ item }}'
       loop: [absent, directory]
 
-    - name: Run Windows 2019 CIS Audit (Low-Risk Profile)
+    - name: Configure Surgical Rule Selection
+      ansible.builtin.set_fact:
+        win2019cis_section1: true
+        win2019cis_rule_1_1_1: true
+
+    - name: Run Windows 2019 CIS Audit (Rule 1.1.1 Only)
       ansible.builtin.include_role:
-        name: ansible-lockdown.windows_2019_cis
+        name: 'ansible-lockdown.windows_2019_cis'
       vars:
-        win2019cis_output_format: "html"
-        win2019cis_output_file: "{{ target_report }}"
-        win2019_cis_output_file: "{{ target_report }}"
+        win2019cis_output_format: 'html'
+        win2019cis_output_file: '{{ target_report }}'
 
-    # - name: Locate Generated Report
-    #   ansible.windows.win_shell: |
-    #     $report = Get-ChildItem -Path C:\ansible_audit -Filter "*.html" -Recurse | Select-Object -ExpandProperty FullName -First 1
-    #     if (-not $report) {
-    #         $report = Get-ChildItem -Path C:\ -Filter "report.html" -Recurse -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName -First 1
-    #     }
-    #     return $report
-    #   register: found_report
+    - name: Install IIS Web Server
+      ansible.windows.win_feature:
+        name: 'Web-Server'
+        state: present
 
-    # - name: Deploy IIS Dashboard
-    #   block:
-    #     - name: Install IIS Features
-    #       ansible.windows.win_feature:
-    #         name: Web-Server
-    #         state: present
+    - name: Create Web Directory for Report
+      ansible.windows.win_file:
+        path: '{{ web_root }}'
+        state: directory
 
-    #     - name: Create Web Directory
-    #       ansible.windows.win_file:
-    #         path: "{{ web_root }}"
-    #         state: directory
+    - name: Copy Audit Report to Web Root as index.html
+      ansible.windows.win_copy:
+        src: '{{ target_report }}'
+        dest: '{{ web_root }}\index.html'
+        remote_src: yes
 
-    #     - name: Copy Audit Report to IIS Root
-    #       ansible.windows.win_copy:
-    #         src: "{{ found_report.stdout | trim }}"
-    #         dest: "{{ web_root }}\\index.html"
-    #         remote_src: yes
-    #       when: found_report.stdout | trim != ""
+    - name: Setup IIS Website on Port 8080
+      community.windows.win_iis_website:
+        name: 'CIS_Audit_Display'
+        state: started
+        port: 8080
+        physical_path: '{{ web_root }}'
 
-    #     - name: Configure IIS Site on Port 8080
-    #       community.windows.win_iis_website:
-    #         name: "CIS_Audit_Dashboard"
-    #         state: started
-    #         port: 8080
-    #         physical_path: "{{ web_root }}"
-
-    #     - name: Allow Firewall Port 8080
-    #       community.windows.win_firewall_rule:
-    #         name: "Allow_CIS_Report"
-    #         localport: 8080
-    #         action: allow
-    #         direction: inbound
-    #         protocol: tcp
-    #         state: present
-    #   when: found_report.stdout | trim != ""
-
-    # - name: Handle Missing Report Error
-    #   ansible.builtin.fail:
-    #     msg: "The CIS Audit finished, but no HTML report was found."
-    #   when: found_report.stdout | trim == ""
+    - name: Open Firewall Port 8080
+      community.windows.win_firewall_rule:
+        name: 'Allow_HTTP_8080'
+        localport: 8080
+        action: allow
+        direction: inbound
+        protocol: tcp
+        state: present
