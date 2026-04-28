@@ -1,6 +1,5 @@
 ---
 - name: Phase 1 & 2 - Integrated Security Audit and Reporting
-  # Including all hosts in one play ensures facts are shared in memory
   hosts: jp_rhel, jp_windows, jp_webserver
   gather_facts: yes
   vars:
@@ -68,11 +67,9 @@
             reboot_pending: "{{ 'YES' if (win_updates_reboot_needed | default(false)) else 'NO' }}"
 
     # --- WEBSERVER DEPLOYMENT SECTION ---
-    # We use delegate_to: "{{ item }}" with a loop or a specific host to target the webserver
+    # Instead of looping a block (invalid), we run this block only on hosts in the jp_webserver group.
     - name: Configure Webserver
-      delegate_to: "{{ item }}"
-      loop: "{{ groups['jp_webserver'] }}"
-      run_once: true
+      when: inventory_hostname in groups['jp_webserver']
       become: yes
       block:
         - name: Install and Configure Apache
@@ -138,8 +135,6 @@
 
   handlers:
     - name: Restart Apache
-      delegate_to: "{{ item }}"
-      loop: "{{ groups['jp_webserver'] }}"
       ansible.builtin.service:
         name: httpd
         state: restarted
