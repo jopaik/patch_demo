@@ -1,5 +1,5 @@
 ---
-- name: Windows 2022 CIS Audit - Connectivity Safe Mode
+- name: Windows 2022 CIS Audit - Deployment and Configuration
   hosts: joon-win2022
   gather_facts: yes
   vars:
@@ -7,7 +7,22 @@
     web_root: 'C:\\inetpub\\wwwroot\\compliance'
 
   tasks:
-    - name: Run Windows 2022 CIS Audit (Section 1 Only)
+    # 1. PREREQUISITE: Install IIS (Fixes the "W3SVC not found" error)
+    - name: Ensure IIS and Management Tools are installed
+      ansible.windows.win_feature:
+        name:
+          - Web-Server
+          - Web-Mgmt-Tools
+          - Web-Scripting-Tools
+        state: present
+      register: iis_install
+
+    - name: Reboot if IIS installation requires it
+      ansible.windows.win_reboot:
+      when: iis_install.reboot_required
+
+    # 2. AUDIT: Run Windows 2022 CIS Audit (Section 1 Only)
+    - name: Run Windows 2022 CIS Audit
       ansible.builtin.include_role:
         name: 'ansible-lockdown.windows_2022_cis'
       vars:
@@ -15,7 +30,11 @@
         run_audit: true
         remediate: false
         audit_out_file: "{{ audit_out_file }}"
+        
+        # Optimization: Skip deep discovery to save time
         win2022cis_skip_for_speed: true
+        
+        # Scope: Section 1 Only
         win2022cis_section1: true
         win2022cis_section2: false
         win2022cis_section3: false
@@ -27,10 +46,13 @@
         win2022cis_section9: false
         win2022cis_section17: false
         win2022cis_section18: false
+
+        # Your specific rules
         win2022cis_rule_1_1_1: true
         win2022cis_rule_1_1_2: true
         win2022cis_rule_1_1_3: true
 
+    # 3. REPORT PREP: Read and Deploy
     - name: Read Audit Report
       ansible.windows.win_shell: "Get-Content {{ audit_out_file }}"
       register: raw_audit_content
@@ -45,7 +67,8 @@
         src: audit_template.html.j2
         dest: "{{ web_root }}/index.html"
 
-    - name: Ensure IIS Binding for Port 8080 (win_shell)
+    # 4. IIS CONFIGURATION: Using Native win_shell (No Community Collection needed)
+    - name: Ensure IIS Binding for Port 8080
       ansible.windows.win_shell: |
         Import-Module WebAdministration
         if (!(Get-WebBinding -Name "Default Web Site" -Port 8080)) {
@@ -57,7 +80,7 @@
       changed_when: binding_shell.rc == 0
       failed_when: binding_shell.rc not in [0, 100]
 
-    - name: Setup IIS Virtual Directory (win_shell)
+    - name: Setup IIS Virtual Directory
       ansible.windows.win_shell: |
         Import-Module WebAdministration
         if (!(Get-WebVirtualDirectory -Site "Default Web Site" -Name "compliance")) {
@@ -69,12 +92,12 @@
       changed_when: vdir_shell.rc == 0
       failed_when: vdir_shell.rc not in [0, 100]
 
-    # REPLACED: ansible.windows.win_firewall_rule with win_shell
-    - name: Ensure Firewall allows Port 8080 (win_shell)
+    # 5. SECURITY: Open Port in Firewall using win_shell
+    - name: Ensure Firewall allows Port 8080
       ansible.windows.win_shell: |
         $ruleName = "Allow_HTTP_8080"
         if (!(Get-NetFirewallRule -DisplayName $ruleName -ErrorAction SilentlyContinue)) {
-            New-NetFirewallRule -DisplayName $ruleName -Direction Inbound -LocalPort 8080 -Protocol TCP -Action Allow
+            New-NetFirewallRule -DisplayName $ruleName -Direction Inbound -LocalPort 8080 -Protocol TCP -Action Allow -Profile Any
             exit 0
         }
         exit 100

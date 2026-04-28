@@ -1,32 +1,86 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>CIS Audit Report: {{ inventory_hostname }}</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CIS Compliance Audit Report</title>
     <style>
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 40px; background: #f0f2f5; }
-        .card { background: white; padding: 25px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
-        h1 { color: #1a73e8; border-bottom: 2px solid #e8eaed; padding-bottom: 10px; }
-        .meta { color: #5f6368; margin-bottom: 20px; }
-        pre { 
-            background: #202124; 
-            color: #bdc1c6; 
-            padding: 20px; 
-            border-radius: 5px; 
-            overflow-x: auto; 
-            white-space: pre-wrap; 
-            font-size: 14px;
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f8f9fa;
+        }
+        .header {
+            background-color: #004a99;
+            color: white;
+            padding: 20px;
+            border-radius: 8px 8px 0 0;
+            margin-bottom: 0;
+        }
+        .timestamp {
+            font-size: 0.9em;
+            color: #d1d1d1;
+            margin-top: 5px;
+        }
+        .content-box {
+            background-color: white;
+            padding: 20px;
+            border: 1px solid #dee2e6;
+            border-radius: 0 0 8px 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        h1 { margin: 0; font-size: 1.8em; }
+        h3 { color: #004a99; border-bottom: 2px solid #eee; padding-bottom: 10px; }
+        
+        pre {
+            background-color: #2d2d2d;
+            color: #f8f8f2;
+            padding: 15px;
+            border-radius: 5px;
+            overflow-x: auto;
+            font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+            font-size: 13px;
             line-height: 1.5;
+            border-left: 5px solid #00c853;
+        }
+        
+        .footer {
+            text-align: center;
+            margin-top: 20px;
+            font-size: 0.8em;
+            color: #777;
         }
     </style>
 </head>
 <body>
-    <div class="card">
-        <h1>CIS Compliance Report</h1>
-        <div class="meta">
-            <strong>Server:</strong> {{ inventory_hostname }}<br>
-            <strong>Date:</strong> {{ ansible_date_time.date }} {{ ansible_date_time.time }}
+
+    <div class="header">
+        <h1>Windows 2022 CIS Audit Report</h1>
+        <div class="timestamp">
+            Report Generation Time (New York): {{ ny_time }}
         </div>
-        <pre>{{ raw_audit_content.stdout }}</pre>
     </div>
+
+    <div class="content-box">
+        <h3>Raw Audit Output</h3>
+        <p>This report displays the security compliance status for Section 1 (Account Policies).</p>
+        
+        <pre>
+{# 
+  The regex below looks for 'Date: YYYY-MM-DD HH:MM:SS' inside the audit output 
+  and replaces it with the current New York time variable from your playbook. 
+#}
+{{ raw_audit_content.stdout | regex_replace('Date: \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}', 'Date: ' ~ ny_time) }}
+        </pre>
+    </div>
+
+    <div class="footer">
+        Automated Security Audit &bull; Generated via Ansible &bull; {{ ansible_hostname | default('Remote Server') }}
+    </div>
+
 </body>
 </html>
