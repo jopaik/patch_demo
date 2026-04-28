@@ -8,9 +8,9 @@
     web_root: 'C:\inetpub\wwwroot'
 
   tasks:
-    - name: Get current time in New York
+    - name: Get current time in New York (Handles DST automatically)
       ansible.builtin.set_fact:
-        ny_time: "{{ now(tz='America/New_York').strftime('%Y-%m-%d %H:%M:%S') }}"
+        ny_time: "{{ now(utc=true, tz='America/New_York').strftime('%Y-%m-%d %H:%M:%S') }}"
         
     # 1. PREREQUISITE: Install IIS
     - name: Ensure IIS and Management Tools are installed

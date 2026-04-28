@@ -7,6 +7,10 @@
     target_kb_ids: "{{ input_kb_ids | default(['KB4052623', 'KB2267602']) }}"
 
   tasks:
+    - name: Get current time in New York (Handles DST automatically)
+      ansible.builtin.set_fact:
+        ny_time: "{{ now(utc=true, tz='America/New_York').strftime('%Y-%m-%d %H:%M:%S') }}"
+
     - name: Save Audit IDs as Facts
       ansible.builtin.set_fact:
         global_cve_ids: "{{ cve_advisory_ids }}"
@@ -49,14 +53,6 @@
       run_once: true
       become: yes
       block:
-        - name: Force New York Timezone on Webserver
-          community.general.timezone:
-            name: America/New_York
-
-        - name: Re-gather facts to capture NY Time
-          ansible.builtin.setup:
-            filter: ansible_date_time
-
         - name: Generate HTML Compliance Report
           ansible.builtin.copy:
             dest: "/var/www/html/index.html"
@@ -79,7 +75,7 @@
               <body>
                   <div class="container">
                       <h1>Infrastructure Security Dashboard</h1>
-                      <p><strong>Report Generated (EST/EDT):</strong> {{ ansible_date_time.date }} {{ ansible_date_time.time }}</p>
+                      <p><strong>Report Generated (EST/EDT):</strong> {{ ny_time }}</p>
                       
                       <table>
                           <tr>

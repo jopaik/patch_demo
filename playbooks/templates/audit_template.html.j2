@@ -23,8 +23,8 @@
     <div class="card">
         <h1>CIS Compliance Report</h1>
         <div class="meta">
-            {# Define the timestamp as a single string variable locally to avoid type errors #}
-            {% set timestamp_str = ansible_date_time.date ~ ' ' ~ ansible_date_time.time %}
+            {# Calculate the EDT/EST time dynamically based on the current epoch #}
+            {% set timestamp_str = '%Y-%m-%d %H:%M:%S %Z' | strftime(ansible_date_time.epoch, tz='America/New_York') %}
             
             <strong>Server:</strong> {{ inventory_hostname }}<br>
             <strong>Report Generated (NY Time):</strong> {{ timestamp_str }}
@@ -32,8 +32,8 @@
 
         <pre>
 {# 
-  We use the pre-defined timestamp_str here. 
-  The + operator is safer for simple string replacement in this context.
+  We use the calculated timestamp_str here. 
+  The regex will now replace the audit content date with the specific NY time.
 #}
 {{ raw_audit_content.stdout | default('') | regex_replace('Execution Date:\s+\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}', 'Execution Date:     ' + timestamp_str) }}
         </pre>
