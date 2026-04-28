@@ -9,9 +9,9 @@
   tasks:
     - name: Get current time in New York (Forced Eastern Time)
       ansible.builtin.set_fact:
-        ny_time: "{{ lookup('pipe', 'TZ=\"America/New_York\" date \"+%Y-%m-%d %H:%M:%S\"') }}"        
+        ny_time: "{{ lookup('pipe', 'TZ=\"America/New_York\" date \"+%Y-%m-%d %H:%M:%S\"') }}"
+
     # 1. PREREQUISITE: Install IIS (Fixes the "W3SVC not found" error)
-    
     - name: Ensure IIS and Management Tools are installed
       ansible.windows.win_feature:
         name:
