@@ -3,7 +3,6 @@
   hosts: jp_rhel, jp_windows, jp_webserver
   gather_facts: yes
   vars:
-    # These are the default targets if no extra vars are passed
     cve_advisory_ids: "{{ input_cve_ids | default(['RHSA-2026:8259', 'CVE-2026-33412']) }}"
     target_kb_ids: "{{ input_kb_ids | default(['KB4052623', 'KB2267602']) }}"
 
@@ -69,18 +68,16 @@
             compliance_status: "{{ 'VULNERABLE' if (win_target_check.results | selectattr('rc', 'defined') | selectattr('rc', 'ne', 0) | list | length > 0) else 'COMPLIANT' }}"
             reboot_pending: "{{ 'YES' if (win_updates_reboot_needed | default(false)) else 'NO' }}"
 
-    # --- WEBSERVER CONFIGURATION & REPORTING ---
+    # --- WEBSERVER CONFIGURATION ---
     - name: Webserver Setup & Conflict Resolution
       delegate_to: joon-webserver
       run_once: true
       become: yes
       block:
-        - name: Update SELinux Config to Disabled
-          ansible.builtin.selinux: { state: disabled }
-
-        - name: Apply Permissive Mode at Runtime
-          ansible.builtin.command: setenforce 0
-          register: selinux_runtime
+        - name: Disable SELinux (Permanent & Runtime)
+          block:
+            - ansible.builtin.selinux: { state: disabled }
+            - ansible.builtin.command: setenforce 0
           failed_when: false
 
         - name: Install Apache
@@ -91,8 +88,19 @@
             dest: /etc/httpd/conf.d/ports.conf
             content: "Listen 8080"
 
-        - name: Ensure Apache is started
-          ansible.builtin.service: { name: httpd, state: started, enabled: yes }
+        - name: Validate Apache Configuration
+          ansible.builtin.command: httpd -t
+          register: apache_config_check
+          changed_when: false
+
+        - name: Force Start Apache (Alternative Method)
+          ansible.builtin.shell: |
+            systemctl stop httpd || true
+            killall -9 httpd || true
+            systemctl reset-failed httpd
+            systemctl start httpd
+          register: force_start
+          changed_when: force_start.rc == 0
 
         - name: Generate HTML Compliance Report
           ansible.builtin.copy:
@@ -142,11 +150,7 @@
                                 <td><strong>{{ host }}</strong></td>
                                 <td><span class="{{ hostvars[host].compliance_status }}">{{ hostvars[host].compliance_status }}</span></td>
                                 <td>{{ hostvars[host].missing_targets | default([]) | join(', ') if hostvars[host].missing_targets else 'None' }}</td>
-                                <td>
-                                    <div class="scroller">
-                                        {{ hostvars[host].all_unpatched | default([]) | join(', ') if hostvars[host].all_unpatched else 'Clean' }}
-                                    </div>
-                                </td>
+                                <td><div class="scroller">{{ hostvars[host].all_unpatched | default([]) | join(', ') if hostvars[host].all_unpatched else 'Clean' }}</div></td>
                             </tr>
                             {% endif %}
                           {% endfor %}
@@ -154,9 +158,9 @@
                   </div>
               </body>
               </html>
-          notify: Restart Apache
+          notify: Alternative Force Restart
 
   handlers:
-    - name: Restart Apache
+    - name: Alternative Force Restart
       delegate_to: joon-webserver
-      ansible.builtin.service: { name: httpd, state: restarted }
+      ansible.builtin.shell: "systemctl restart httpd || (killall -9 httpd && systemctl start httpd)"
