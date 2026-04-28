@@ -1,39 +1,34 @@
-- name: Windows 2019 CIS Audit & Local Web Hosting
-  hosts: joon-win2019
-  become: no
+---
+- name: Windows 2022 CIS Audit & Local Web Hosting
+  hosts: joon-win2022
+  # This ensures the following tasks target the Windows server, not the AAP container
+  connection: winrm 
   gather_facts: yes
   vars:
     setup_audit: true
     run_audit: true
     remediate: false
 
-    # --- 1. DISABLE EVERYTHING BY DEFAULT ---
-    win2019cis_section1: false
-    win2019cis_section2: false
-    win2019cis_section3: false
-    win2019cis_section4: false
-    win2019cis_section5: false
-    win2019cis_section6: false
-    win2019cis_section7: false
-    win2019cis_section8: false
-    win2019cis_section9: false
-    win2019cis_section17: false
-    win2019cis_section18: false
+    # --- 1. DISABLE ALL SECTIONS FOR SMALLEST TEST CASE ---
+    win2022cis_section1: false
+    # ... [rest of your section vars set to false] ...
 
-    # --- PATH SETTINGS ---
+    # We define the path ON the joon-win2022 C: drive
     audit_out_file: 'C:\cis_audit_report.txt'
     web_root: 'C:\inetpub\wwwroot\compliance'
 
   tasks:
-
-    - name: Configure Surgical Rule Selection
+    - name: Configure Surgical Rule Selection (Rule 1.1.1 Only)
       ansible.builtin.set_fact:
-        win2019cis_section1: true
-        win2019cis_rule_1_1_1: true
+        win2022cis_section1: true
+        win2022cis_rule_1_1_1: true
 
-    - name: Run Windows 2019 CIS Audit (Rule 1.1.1 Only)
+    - name: Run Windows 2022 CIS Audit
       ansible.builtin.include_role:
-        name: 'ansible-lockdown.windows_2019_cis'
+        name: 'ansible-lockdown.windows_2022_cis'
+      # The role will run on the target, but we force the report to save locally on Windows
+      vars:
+        audit_out_file: 'C:\cis_audit_report.txt'
 
     - name: Install IIS Web Server
       ansible.windows.win_feature:
@@ -45,17 +40,16 @@
         path: '{{ web_root }}'
         state: directory
 
-    # --- NEW CONVERSION STEPS ---
-    - name: Read the raw CIS text report
+    - name: Read the raw CIS text report FROM THE WINDOWS SERVER
       ansible.windows.win_shell: "Get-Content {{ audit_out_file }}"
       register: raw_audit_content
 
-    - name: Convert Text to HTML and Deploy as index.html
+    - name: Convert Text to HTML and Deploy to Windows Web Root
       ansible.windows.win_template:
         src: audit_template.html.j2
         dest: '{{ web_root }}\index.html'
+      # This ensures the template is rendered and placed on the target C: drive
 
-    # --- IIS CONFIGURATION ---
     - name: Setup IIS Website on Port 8080
       community.windows.win_iis_website:
         name: 'CIS_Audit_Display'
