@@ -5,34 +5,45 @@
   serial: 1 
 
   tasks:
+    - name: Initialize reboot_override as a cached fact
+      ansible.builtin.set_fact:
+        # Defaults to false unless already set in the cache or passed via extra_vars
+        reboot_override: "{{ reboot_override | default(false) | bool }}"
+        cacheable: yes
+
     - name: Check for cached reboot requirement
       ansible.builtin.set_fact:
-        effective_reboot_required: "{{ hostvars[inventory_hostname]['reboot_required'] | default(false) }}"
+        effective_reboot_required: "{{ hostvars[inventory_hostname]['reboot_required'] | default(false) | bool }}"
 
     - name: Check OS for live reboot requirement if cache is false
       ansible.builtin.command: needs-restarting -r
       register: live_reboot_check
       failed_when: false
       changed_when: false
-      when: not effective_reboot_required
+      when: not (effective_reboot_required or reboot_override)
 
     - name: Consolidate reboot status
       ansible.builtin.set_fact:
-        final_reboot_decision: "{{ effective_reboot_required or (live_reboot_check.rc | default(0) != 0) }}"
+        # Final decision factors in Cache OR Live Check OR the Override flag
+        final_reboot_decision: >-
+          {{ 
+            reboot_override or 
+            effective_reboot_required or 
+            (live_reboot_check.rc | default(0) != 0) 
+          }}
 
     - name: Perform reboot if required
       ansible.builtin.reboot:
-        msg: "Rebooting RHEL server via Ansible (Requirement found in Cache or OS)"
+        msg: "Rebooting RHEL server via Ansible (Requirement: Cache, OS, or Override)"
         connect_timeout: 5
         reboot_timeout: 600
-        # This is the primary check: Ansible won't move on until 'uptime' succeeds
         test_command: uptime
       when: final_reboot_decision
 
     - name: Wait for server to be fully responsive
       ansible.builtin.wait_for_connection:
-        delay: 10      # Wait 10 seconds before starting checks
-        timeout: 300   # Give up after 5 minutes
+        delay: 10
+        timeout: 300
       when: final_reboot_decision
 
     - name: Verify server is back and get uptime
@@ -40,9 +51,10 @@
       register: uptime_output
       when: final_reboot_decision
 
-    - name: Clear cached reboot flag after successful restart
+    - name: Clear cached reboot flags after successful restart
       ansible.builtin.set_fact:
         reboot_required: false
+        reboot_override: false
         cacheable: yes
       when: final_reboot_decision
 
@@ -50,5 +62,6 @@
       ansible.builtin.debug:
         msg: >
           System: {{ inventory_hostname }} | 
+          Reboot Override Status: {{ reboot_override }} |
           Reboot Performed: {{ 'YES' if final_reboot_decision else 'NO' }} |
           Current Uptime: {{ uptime_output.stdout | default('N/A') }}
