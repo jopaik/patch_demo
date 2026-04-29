@@ -9,7 +9,6 @@
   tasks:
     - name: Get current time in EDT (Manual Offset)
       ansible.builtin.set_fact:
-        # UTC minus 14400 seconds (4 hours) for EDT
         ny_time: "{{ '%Y-%m-%d %H:%M:%S EDT' | strftime((ansible_date_time.epoch | int) - 14400) }}"
 
     # --- RHEL AUDIT BLOCK ---
@@ -27,10 +26,18 @@
           register: rhel_all_vulns
           changed_when: false
 
+        - name: Check if RHEL needs a reboot
+          ansible.builtin.command: "needs-restarting -r"
+          register: rhel_reboot_check
+          failed_when: false
+          changed_when: false
+
         - name: Set RHEL Compliance Facts
           ansible.builtin.set_fact:
             missing_targets: "{{ cve_advisory_ids | select('in', rhel_target_check.stdout | default('')) | list }}"
             full_vulns: "{{ rhel_all_vulns.stdout_lines | map('regex_search', '(RHSA-\\d{4}:\\d+|CVE-\\d{4}-\\d+)') | select('string') | list | unique }}"
+            # needs-restarting returns RC 1 if reboot is needed
+            reboot_needed: "{{ 'YES' if rhel_reboot_check.rc != 0 else 'NO' }}"
 
         - name: Set RHEL Compliance Status
           ansible.builtin.set_fact:
@@ -46,10 +53,19 @@
             state: searched
           register: win_all_check
 
+        - name: Check for Windows Pending Reboot
+          ansible.windows.win_shell: |
+            $reboot = $false
+            if (Get-ItemProperty "HKLM:\Software\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending" -ErrorAction SilentlyContinue) { $reboot = $true }
+            if (Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired" -ErrorAction SilentlyContinue) { $reboot = $true }
+            $reboot
+          register: win_reboot_check
+
         - name: Set Windows Vulnerability Facts
           ansible.builtin.set_fact:
             missing_targets: "{{ win_all_check.updates | selectattr('kb', 'defined') | map(attribute='kb') | select('in', target_kb_ids) | list }}"
             full_vulns: "{{ win_all_check.updates | selectattr('kb', 'defined') | map(attribute='kb') | list }}"
+            reboot_needed: "{{ 'YES' if 'True' in win_reboot_check.stdout else 'NO' }}"
 
         - name: Set Windows Compliance Status
           ansible.builtin.set_fact:
@@ -78,6 +94,8 @@
                       th { background-color: #212529; color: white; }
                       .VULNERABLE { color: #dc3545; font-weight: bold; }
                       .COMPLIANT { color: #198754; font-weight: bold; }
+                      .reboot-YES { color: #fd7e14; font-weight: bold; }
+                      .reboot-NO { color: #adb5bd; }
                       .vuln-tag { display: inline-block; background: #e9ecef; color: #495057; padding: 2px 8px; border-radius: 4px; margin: 2px; font-size: 11px; font-family: 'Courier New', monospace; border: 1px solid #dee2e6; }
                       .review-box { background-color: #e7f3ff; border: 1px solid #b3d7ff; padding: 15px; border-radius: 8px; margin-bottom: 20px; }
                   </style>
@@ -108,10 +126,11 @@
                       
                       <table>
                           <tr>
-                              <th style="width: 15%;">Host</th>
+                              <th style="width: 12%;">Host</th>
                               <th style="width: 10%;">Status</th>
-                              <th style="width: 25%;">Missing Targeted</th>
-                              <th style="width: 50%;">Full System Vulnerabilities (All Missing)</th>
+                              <th style="width: 15%;">Missing Targeted</th>
+                              <th style="width: 10%;">Reboot Required</th>
+                              <th style="width: 53%;">Full System Vulnerabilities</th>
                           </tr>
                           {% for host in groups['all'] %}
                             {% if hostvars[host].compliance_status is defined %}
@@ -119,6 +138,7 @@
                                 <td>{{ host }}</td>
                                 <td><span class="{{ hostvars[host].compliance_status }}">{{ hostvars[host].compliance_status }}</span></td>
                                 <td>{{ hostvars[host].missing_targets | join(', ') if hostvars[host].missing_targets else 'None' }}</td>
+                                <td><span class="reboot-{{ hostvars[host].reboot_needed }}">{{ hostvars[host].reboot_needed }}</span></td>
                                 <td>
                                     {% if hostvars[host].full_vulns %}
                                         {% for vuln in hostvars[host].full_vulns %}
