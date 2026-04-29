@@ -9,6 +9,7 @@
   tasks:
     - name: Get current time in EDT (Manual Offset)
       ansible.builtin.set_fact:
+        # UTC minus 14400 seconds (4 hours) for EDT
         ny_time: "{{ '%Y-%m-%d %H:%M:%S EDT' | strftime((ansible_date_time.epoch | int) - 14400) }}"
 
     # --- RHEL AUDIT BLOCK ---
@@ -29,9 +30,11 @@
         - name: Set RHEL Compliance Facts
           ansible.builtin.set_fact:
             missing_targets: "{{ cve_advisory_ids | select('in', rhel_target_check.stdout | default('')) | list }}"
-            # Extracting all RHSA/CVE IDs from the broad security scan
             full_vulns: "{{ rhel_all_vulns.stdout_lines | map('regex_search', '(RHSA-\\d{4}:\\d+|CVE-\\d{4}-\\d+)') | select('string') | list | unique }}"
-            compliance_status: "{{ 'VULNERABLE' if (cve_advisory_ids | select('in', rhel_target_check.stdout | default('')) | list | length > 0) else 'COMPLIANT' }}"
+
+        - name: Set RHEL Compliance Status
+          ansible.builtin.set_fact:
+            compliance_status: "{{ 'VULNERABLE' if (missing_targets | length > 0) else 'COMPLIANT' }}"
 
     # --- WINDOWS AUDIT BLOCK ---
     - name: Windows Audit Block
@@ -43,11 +46,13 @@
             state: searched
           register: win_all_check
 
-        - name: Set Windows Compliance Facts
+        - name: Set Windows Vulnerability Facts
           ansible.builtin.set_fact:
             missing_targets: "{{ win_all_check.updates | selectattr('kb', 'defined') | map(attribute='kb') | select('in', target_kb_ids) | list }}"
-            # Capturing every missing KB found in the scan
             full_vulns: "{{ win_all_check.updates | selectattr('kb', 'defined') | map(attribute='kb') | list }}"
+
+        - name: Set Windows Compliance Status
+          ansible.builtin.set_fact:
             compliance_status: "{{ 'VULNERABLE' if (missing_targets | length > 0) else 'COMPLIANT' }}"
 
     # --- WEBSERVER CONFIGURATION ---
@@ -73,7 +78,7 @@
                       th { background-color: #212529; color: white; }
                       .VULNERABLE { color: #dc3545; font-weight: bold; }
                       .COMPLIANT { color: #198754; font-weight: bold; }
-                      .vuln-tag { display: inline-block; background: #eee; padding: 2px 6px; border-radius: 4px; margin: 2px; font-size: 11px; font-family: monospace; }
+                      .vuln-tag { display: inline-block; background: #e9ecef; color: #495057; padding: 2px 8px; border-radius: 4px; margin: 2px; font-size: 11px; font-family: 'Courier New', monospace; border: 1px solid #dee2e6; }
                   </style>
               </head>
               <body>
@@ -100,7 +105,7 @@
                                             <span class="vuln-tag">{{ vuln }}</span>
                                         {% endfor %}
                                     {% else %}
-                                        None
+                                        <span style="color: #6c757d; font-style: italic;">No additional vulnerabilities</span>
                                     {% endif %}
                                 </td>
                             </tr>
