@@ -1,0 +1,47 @@
+---
+- name: Manage Podman Containers on Webserver Group
+  hosts: jp_containerized_webserver
+  gather_facts: yes
+
+  tasks:
+    - name: Ensure Nginx image is pulled
+      containers.podman.podman_image:
+        name: nginx:stable
+        state: present
+
+    - name: Start the Web App Container
+      containers.podman.podman_container:
+        name: my_web_app
+        image: nginx:stable
+        state: started
+        ports:
+          - "8081:80"
+      register: container_info
+
+    # This task "looks into" the container using a one-off exec
+    - name: Check Nginx config file existence
+      containers.podman.podman_container_exec:
+        name: my_web_app
+        command: test -f /etc/nginx/nginx.conf
+      register: config_check
+      failed_when: config_check.rc != 0
+
+    # ALTERNATE: Use the connection plugin to run a module INSIDE the container
+    - name: Update index.html inside the container
+      ansible.builtin.copy:
+        content: "<h1>Welcome to the JP Containerized Webserver</h1>"
+        dest: /usr/share/nginx/html/index.html
+      delegate_to: my_web_app
+      vars:
+        ansible_connection: containers.podman.podman
+
+    - name: Verify the change from the host perspective
+      ansible.builtin.uri:
+        url: "http://localhost:8081"
+        return_content: yes
+      register: webpage
+      failed_when: "'JP Containerized' not in webpage.content"
+
+    - name: Display Container Status
+      ansible.builtin.debug:
+        msg: "Container 'my_web_app' is up on port 8081 and serving content."
