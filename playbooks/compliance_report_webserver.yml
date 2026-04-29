@@ -69,7 +69,7 @@
               <!DOCTYPE html>
               <html>
               <head>
-                  <title>Security Audit Report powered by Ansible</title>
+                  <title>Security Audit Report</title>
                   <style>
                       body { font-family: 'Segoe UI', sans-serif; margin: 20px; background-color: #f8f9fa; }
                       .container { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); width: 98%; margin: auto; }
@@ -79,19 +79,39 @@
                       .VULNERABLE { color: #dc3545; font-weight: bold; }
                       .COMPLIANT { color: #198754; font-weight: bold; }
                       .vuln-tag { display: inline-block; background: #e9ecef; color: #495057; padding: 2px 8px; border-radius: 4px; margin: 2px; font-size: 11px; font-family: 'Courier New', monospace; border: 1px solid #dee2e6; }
+                      .review-box { background-color: #e7f3ff; border: 1px solid #b3d7ff; padding: 15px; border-radius: 8px; margin-bottom: 20px; }
                   </style>
               </head>
               <body>
                   <div class="container">
                       <h1>Infrastructure Security Dashboard</h1>
+
+                      <div class="review-box">
+                          <h3 style="margin-top: 0; color: #0056b3;">Audit Focus (Targets Under Review)</h3>
+                          <div style="display: flex; gap: 40px;">
+                              <div>
+                                  <strong>RHEL Advisories:</strong><br>
+                                  {% for cve in cve_advisory_ids %}
+                                      <span class="vuln-tag" style="background: #cfe2ff;">{{ cve }}</span>
+                                  {% endfor %}
+                              </div>
+                              <div>
+                                  <strong>Windows KBs:</strong><br>
+                                  {% for kb in target_kb_ids %}
+                                      <span class="vuln-tag" style="background: #cfe2ff;">{{ kb }}</span>
+                                  {% endfor %}
+                              </div>
+                          </div>
+                      </div>
+
                       <p><strong>Report Generated (NY Time):</strong> {{ ny_time }}</p>
                       
                       <table>
                           <tr>
                               <th style="width: 15%;">Host</th>
                               <th style="width: 10%;">Status</th>
-                              <th style="width: 25%;">Missing Targeted (High Priority)</th>
-                              <th style="width: 50%;">Full System Vulnerabilities (All Missing KBs/CVEs)</th>
+                              <th style="width: 25%;">Missing Targeted</th>
+                              <th style="width: 50%;">Full System Vulnerabilities (All Missing)</th>
                           </tr>
                           {% for host in groups['all'] %}
                             {% if hostvars[host].compliance_status is defined %}
