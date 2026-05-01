@@ -1,0 +1,22 @@
+---
+- name: Remove Firefox from Windows Servers
+  hosts: jp_windows
+  gather_facts: no
+  tasks:
+    - name: Uninstall Mozilla Firefox
+      ansible.windows.win_package:
+        product_id: 'Mozilla Firefox'
+        state: absent
+      register: uninstall_result
+
+    - name: Clean up Firefox Program Files (Optional)
+      ansible.windows.win_file:
+        path: 'C:\Program Files\Mozilla Firefox'
+        state: absent
+      when: uninstall_result.changed
+
+    - name: Clean up 32-bit Firefox Program Files (Optional)
+      ansible.windows.win_file:
+        path: 'C:\Program Files (x86)\Mozilla Firefox'
+        state: absent
+      when: uninstall_result.changed

@@ -1,0 +1,10 @@
+---
+- name: Remove Firefox from RHEL fleet
+  hosts: rhel_servers
+  become: yes
+  tasks:
+    - name: Uninstall Firefox package
+      ansible.builtin.dnf:
+        name: firefox
+        state: absent
+        autoremove: yes  # This cleans up unused dependencies
