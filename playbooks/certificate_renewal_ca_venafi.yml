@@ -1,0 +1,63 @@
+---
+- name: Certificate Renewal and Update
+  hosts: web_servers
+  become: yes
+  vars:
+    cert_path: "/etc/ssl/certs/internal_app.crt"
+    key_path: "/etc/ssl/private/internal_app.key"
+    common_name: "app.example.com"
+    
+    # Venafi Specific Vars
+    venafi_api_key: "{{ vault_venafi_key }}"
+    venafi_zone: "Default"
+
+  tasks:
+    # --- SECTION 1: CHECK CURRENT CERTIFICATE ---
+    - name: Check if certificate is expiring in the next 30 days
+      community.crypto.x509_certificate_info:
+        path: "{{ cert_path }}"
+      register: cert_info
+      ignore_errors: yes
+
+    - name: Set renewal flag
+      ansible.builtin.set_fact:
+        needs_renewal: "{{ cert_info.expired or (cert_info.not_after | to_datetime('%Y%m%d%H%M%SZ') - now()).days < 30 }}"
+      when: cert_info.exists
+
+    # --- SECTION 2: RENEWAL VIA INTERNAL CA (Option A) ---
+    - name: Generate CSR for Internal CA
+      community.crypto.openssl_csr:
+        path: "/tmp/renewal.csr"
+        privatekey_path: "{{ key_path }}"
+        common_name: "{{ common_name }}"
+      when: needs_renewal
+
+    - name: Sign Certificate with Internal CA
+      community.crypto.x509_certificate:
+        path: "{{ cert_path }}"
+        csr_path: "/tmp/renewal.csr"
+        ownca_path: "/etc/ssl/CA/ca.crt"
+        ownca_privatekey_path: "/etc/ssl/CA/ca.key"
+        provider: ownca
+      when: needs_renewal
+      notify: Restart Web Service
+
+    # --- SECTION 3: RENEWAL VIA VENAFI (Option B) ---
+    - name: Request Certificate from Venafi
+      venafi.machine_identity.certificate:
+        url: "https://venafi.example.com/vedsdk"
+        token: "{{ venafi_api_key }}"
+        common_name: "{{ common_name }}"
+        certificate_path: "{{ cert_path }}"
+        privatekey_path: "{{ key_path }}"
+        bundle_path: "/etc/ssl/certs/bundle.crt"
+        state: present
+        renew: yes
+      when: needs_renewal
+      notify: Restart Web Service
+
+  handlers:
+    - name: Restart Web Service
+      ansible.builtin.service:
+        name: nginx
+        state: restarted
