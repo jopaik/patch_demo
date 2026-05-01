@@ -1,6 +1,6 @@
 ---
 - name: Remove Firefox from RHEL fleet
-  hosts: rhel_servers
+  hosts: jp_rhel
   become: yes
   tasks:
     - name: Uninstall Firefox package

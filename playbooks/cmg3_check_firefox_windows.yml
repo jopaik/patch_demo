@@ -1,0 +1,22 @@
+---
+- name: Check Firefox Installation Status
+  hosts: jp_windows
+  gather_facts: no
+  tasks:
+    - name: Check Registry for Firefox (64-bit and 32-bit)
+      ansible.windows.win_reg_stat:
+        path: 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Mozilla Firefox'
+      register: firefox_reg
+
+    - name: Set Installation Fact
+      ansible.builtin.set_fact:
+        firefox_installed: "{{ firefox_reg.exists }}"
+
+    - name: Report Status
+      ansible.builtin.debug:
+        msg: >
+          {% if firefox_installed %}
+          Firefox is INSTALLED (Version: {{ firefox_reg.properties.DisplayVersion.value | default('Unknown') }})
+          {% else %}
+          Firefox is NOT INSTALLED
+          {% endif %}
