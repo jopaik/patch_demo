@@ -1,22 +1,18 @@
 ---
-- name: Check Firefox Installation Status
+- name: Hardening Check - Block Unauthorized Software (Windows)
   hosts: jp_windows
   gather_facts: no
   tasks:
-    - name: Check Registry for Firefox (64-bit and 32-bit)
+    - name: Check Registry for Firefox
       ansible.windows.win_reg_stat:
         path: 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Mozilla Firefox'
       register: firefox_reg
 
-    - name: Set Installation Fact
-      ansible.builtin.set_fact:
-        firefox_installed: "{{ firefox_reg.exists }}"
+    - name: Fail if Firefox is present
+      ansible.builtin.fail:
+        msg: "SECURITY VIOLATION: Firefox is installed on {{ inventory_hostname }}. Browsers are prohibited on this tier."
+      when: firefox_reg.exists
 
-    - name: Report Status
+    - name: Compliance Pass
       ansible.builtin.debug:
-        msg: >
-          {% if firefox_installed %}
-          Firefox is INSTALLED (Version: {{ firefox_reg.properties.DisplayVersion.value | default('Unknown') }})
-          {% else %}
-          Firefox is NOT INSTALLED
-          {% endif %}
+        msg: "No unauthorized browsers detected."

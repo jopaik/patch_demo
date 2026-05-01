@@ -1,21 +1,22 @@
 ---
-- name: Check Firefox Installation using DNF
+- name: Hardening Check - Block Unauthorized Software (RHEL)
   hosts: jp_rhel
+  gather_facts: no
   become: yes
   tasks:
-    - name: Query DNF for Firefox
+    - name: Query DNF for Firefox status
       ansible.builtin.dnf:
         list: firefox
       register: dnf_result
 
-    - name: Filter and Display Installed Version
-      ansible.builtin.debug:
-        msg: "Firefox is INSTALLED at version: {{ item.version }}-{{ item.release }}"
-      loop: "{{ dnf_result.results }}"
-      when: item.yumstate == 'installed'
-      loop_control:
-        label: "{{ item.name }}"
+    - name: Fail execution if Firefox is detected
+      ansible.builtin.fail:
+        msg: |
+          SECURITY VIOLATION: Firefox is installed on {{ inventory_hostname }}.
+          In accordance with server hardening policy, GUI browsers are prohibited.
+          Please remove the package or contact the security team.
+      when: dnf_result.results | selectattr('yumstate', 'equalto', 'installed') | list | length > 0
 
-    - name: Set Fact for Downstream Tasks
-      ansible.builtin.set_fact:
-        firefox_installed: "{{ dnf_result.results | selectattr('yumstate', 'equalto', 'installed') | list | length > 0 }}"
+    - name: Report Compliance
+      ansible.builtin.debug:
+        msg: "Compliance Verified: Firefox is not present on this system."
