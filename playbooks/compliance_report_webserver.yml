@@ -2,11 +2,14 @@
 - name: Phase 1 & 2 - Integrated Security Audit and Centralized Reporting
   hosts: jp_rhel, jp_windows, jp_webserver
   gather_facts: yes
-  vars:
-    cve_advisory_ids: "{{ input_cve_ids | default(['RHSA-2026:8259', 'CVE-2026-33412']) }}"
-    target_kb_ids: "{{ input_kb_ids | default(['KB4052623', 'KB2267602']) }}"
 
   tasks:
+    - name: Persist CVE and KB IDs to Fact Cache
+      set_fact:
+        cve_advisory_ids: "{{ input_cve_ids | default(['RHSA-2026:8259', 'CVE-2026-33412']) }}"
+        target_kb_ids: "{{ input_kb_ids | default(['KB4052623', 'KB2267602']) }}"
+        cacheable: yes
+
     - name: Get current time in EDT (Manual Offset)
       ansible.builtin.set_fact:
         ny_time: "{{ '%Y-%m-%d %H:%M:%S EDT' | strftime((ansible_date_time.epoch | int) - 14400) }}"

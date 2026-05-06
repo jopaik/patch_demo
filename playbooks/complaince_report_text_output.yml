@@ -20,9 +20,10 @@
         msg:
           - "------------------------------------------------"
           - "HOST: {{ inventory_hostname }} (RHEL)"
-          - "STATUS: {{ 'NON-COMPLIANT' if (missing_targets | length > 0 or full_vulns | length > 0) else 'COMPLIANT' }}"
+          - "Advisories Under Review: {{ cve_advisory_ids | default([]) }}"
+          - "STATUS: {{ compliance_status | default('UNKNOWN') }}"
           - "------------------------------------------------"
           - "Missing Targets:    {{ missing_targets | to_nice_json }}"
           - "Vulnerabilities:    {{ full_vulns | to_nice_json }}"
-          - "Reboot Required:    {{ 'YES' if rhel_reboot_check.rc | default(0) != 0 else 'NO' }}"
+          - "Reboot Required:    {{ reboot_needed }}"
       when: ansible_os_family == "RedHat"
