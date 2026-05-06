@@ -4,11 +4,16 @@
   gather_facts: false
 
   tasks:
+    # Minimal gathering to identify OS family
+    - name: Gather OS Family only
+      ansible.builtin.setup:
+        gather_subset:
+          - 'distribution'
 
     # --- RHEL OUTPUT ---
     - name: Display RHEL Compliance Logic
       vars:
-        # Define local variables for cleaner logic
+        # Standard Jinja2 filtering for RHEL
         rhel_missing: "{{ cve_advisory_ids | default([]) | select('in', rhel_target_check.stdout | default('')) | list }}"
         rhel_vulns: "{{ rhel_all_vulns.stdout_lines | default([]) | map('regex_search', '(RHSA-\\d{4}:\\d+|CVE-\\d{4}-\\d+)') | select('string') | list | unique }}"
       ansible.builtin.debug:
@@ -17,21 +22,24 @@
           - "HOST: {{ inventory_hostname }} (RHEL)"
           - "STATUS: {{ 'NON-COMPLIANT' if (rhel_missing | length > 0 or rhel_vulns | length > 0) else 'COMPLIANT' }}"
           - "------------------------------------------------"
-          - "Missing Targets:    {{ rhel_missing }}"
-          - "Vulnerabilities:    {{ rhel_vulns }}"
+          - "Missing Targets:    {{ rhel_missing | to_nice_json }}"
+          - "Vulnerabilities:    {{ rhel_vulns | to_nice_json }}"
           - "Reboot Required:    {{ 'YES' if rhel_reboot_check.rc | default(0) != 0 else 'NO' }}"
       when: ansible_os_family == "RedHat"
 
     # --- WINDOWS OUTPUT ---
     - name: Display Windows Compliance Logic
       vars:
-        win_missing: "{{ win_updates_result.updates | default({}) | json_query('*.kb_article') | list }}"
+        # ALTERNATIVE 3: Uses dict2items + map instead of json_query (no jmespath needed)
+        win_missing: "{{ win_updates_result.updates | default({}) | dict2items | map(attribute='value.kb_article') | list }}"
+        win_vulns: "{{ win_updates_result.updates | default({}) | dict2items | map(attribute='value.title') | list }}"
       ansible.builtin.debug:
         msg:
           - "------------------------------------------------"
           - "HOST: {{ inventory_hostname }} (Windows)"
           - "STATUS: {{ 'NON-COMPLIANT' if (win_missing | length > 0) else 'COMPLIANT' }}"
           - "------------------------------------------------"
-          - "Missing KBs:        {{ win_missing }}"
+          - "Missing KBs:        {{ win_missing | to_nice_json }}"
+          - "Update Titles:      {{ win_vulns | to_nice_json }}"
           - "Reboot Required:    {{ win_reboot_check.stdout | default('NO') | trim }}"
       when: ansible_os_family == "Windows"
