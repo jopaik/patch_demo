@@ -43,6 +43,7 @@
         - name: Set RHEL Compliance Status
           ansible.builtin.set_fact:
             compliance_status: "{{ 'VULNERABLE' if (missing_targets | length > 0) else 'COMPLIANT' }}"
+            cacheable: yes
 
     # --- WINDOWS AUDIT BLOCK ---
     - name: Windows Audit Block
@@ -68,10 +69,11 @@
             full_vulns: "{{ win_all_check.updates | selectattr('kb', 'defined') | map(attribute='kb') | list }}"
             reboot_needed: "{{ 'YES' if 'True' in win_reboot_check.stdout else 'NO' }}"
             cacheable: yes
-            
+
         - name: Set Windows Compliance Status
           ansible.builtin.set_fact:
             compliance_status: "{{ 'VULNERABLE' if (missing_targets | length > 0) else 'COMPLIANT' }}"
+            cacheable: yes
 
     # --- WEBSERVER CONFIGURATION ---
     - name: Webserver Setup & Reporting
