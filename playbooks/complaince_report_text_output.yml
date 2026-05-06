@@ -4,9 +4,6 @@
   gather_facts: false
 
   tasks:
-    - name: Gather minimal OS info
-      ansible.builtin.setup:
-      gather_subset: ['distribution']
 
     # --- RHEL OUTPUT ---
     - name: Display RHEL Compliance Logic
