@@ -38,12 +38,12 @@
             full_vulns: "{{ rhel_all_vulns.stdout_lines | map('regex_search', '(RHSA-\\d{4}:\\d+|CVE-\\d{4}-\\d+)') | select('string') | list | unique }}"
             # needs-restarting returns RC 1 if reboot is needed
             reboot_needed: "{{ 'YES' if rhel_reboot_check.rc != 0 else 'NO' }}"
-            cacheable: yes
+          cacheable: yes
 
         - name: Set RHEL Compliance Status
           ansible.builtin.set_fact:
             compliance_status: "{{ 'VULNERABLE' if (missing_targets | length > 0) else 'COMPLIANT' }}"
-            cacheable: yes
+          cacheable: yes
 
     # --- WINDOWS AUDIT BLOCK ---
     - name: Windows Audit Block
@@ -68,12 +68,12 @@
             missing_targets: "{{ win_all_check.updates | selectattr('kb', 'defined') | map(attribute='kb') | select('in', target_kb_ids) | list }}"
             full_vulns: "{{ win_all_check.updates | selectattr('kb', 'defined') | map(attribute='kb') | list }}"
             reboot_needed: "{{ 'YES' if 'True' in win_reboot_check.stdout else 'NO' }}"
-            cacheable: yes
+          cacheable: yes
 
         - name: Set Windows Compliance Status
           ansible.builtin.set_fact:
             compliance_status: "{{ 'VULNERABLE' if (missing_targets | length > 0) else 'COMPLIANT' }}"
-            cacheable: yes
+          cacheable: yes
 
     # --- WEBSERVER CONFIGURATION ---
     - name: Webserver Setup & Reporting
