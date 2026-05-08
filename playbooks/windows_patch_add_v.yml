@@ -2,7 +2,7 @@
 - name: Uninstall Security and Defender KBs on Server 2022
   hosts: joon-win2022
   vars:
-    # 1. Define the default list as a proper YAML list
+    # 1. Define the default list
     default_kb_list: 
       - 'KB4052623'
       - 'KB2267602'
@@ -12,29 +12,24 @@
   tasks:
     - name: Normalize KB input using lazy fix
       ansible.builtin.set_fact:
-        # If string (from survey/cli): split it. If not a string (list/undefined): use as is.
         final_kb_list: "{{ (input_kb_to_unpatch | replace(',', ' ')).split() if input_kb_to_unpatch is defined and input_kb_to_unpatch is string else (input_kb_to_unpatch | default(default_kb_list)) }}"
-
-    - name: Verify data type
-      ansible.builtin.debug:
-        msg: "Type is {{ final_kb_list | type_debug }} for list: {{ final_kb_list }}"
 
     - name: Uninstall KBs one by one
       ansible.windows.win_shell: |
         $kb = "{{ item | regex_replace('(?i)kb', '') }}"
         if (Get-HotFix -Id "KB$kb" -ErrorAction SilentlyContinue) {
-            Write-Host "Found KB$kb. Uninstalling..."
+            Write-Host "MATCH_FOUND: KB$kb. Uninstalling..."
             wusa.exe /uninstall /kb:$kb /quiet /norestart
-            $host.SetShouldExit(10) 
+            exit 0
         } else {
-            Write-Host "KB$kb not found."
-            $host.SetShouldExit(0)
+            Write-Host "NOT_FOUND: KB$kb"
+            exit 0
         }
       loop: "{{ final_kb_list }}"
       register: uninstall_results
-      failed_when: false 
-      # FIX: Use 'rc' directly. 'item' is just the string name of the KB.
-      changed_when: rc == 10
+      # We check the stdout of the current loop iteration for our custom string
+      changed_when: "'MATCH_FOUND' in (uninstall_results.results | last).stdout"
+      failed_when: false
 
     - name: Reset Update Cache (Required for Audit Detection)
       block:
@@ -46,7 +41,9 @@
 
         - name: Delete SoftwareDistribution Folder
           ansible.windows.win_shell: |
-            Remove-Item -Path "C:\Windows\SoftwareDistribution" -Recurse -Force -ErrorAction SilentlyContinue
+            if (Test-Path "C:\Windows\SoftwareDistribution") {
+                Remove-Item -Path "C:\Windows\SoftwareDistribution" -Recurse -Force -ErrorAction SilentlyContinue
+            }
           ignore_errors: yes
 
         - name: Start Update Services
@@ -54,6 +51,7 @@
             name: "{{ item }}"
             state: started
           loop: [wuauserv, cryptsvc]
+      # Triggers if any item in the loop above resulted in MATCH_FOUND
       when: uninstall_results.changed
 
     - name: Reboot joon-win2022
@@ -64,4 +62,4 @@
 
     - name: Audit Status
       ansible.builtin.debug:
-        msg: "System unpatched. Run your Audit Playbook now to update Grafana."
+        msg: "System unpatched. Run your Audit Playbook"
