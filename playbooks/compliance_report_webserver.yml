@@ -55,7 +55,7 @@
       block:
         - name: Discover ALL Missing Windows KBs
           ansible.windows.win_updates:
-            category_names: [SecurityUpdates, CriticalUpdates, Updates]
+            category_names: [SecurityUpdates, CriticalUpdates, Updates, DefinitionUpdates, FeaturePacks, ServicePacks, Tools, UpdateRollups]
             state: searched
           register: win_all_check
 
