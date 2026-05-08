@@ -2,11 +2,7 @@
 - name: Uninstall Security and Defender KBs on Server 2022
   hosts: joon-win2022
   vars:
-    default_kb_list: 
-      - 'KB4052623'
-      - 'KB2267602'
-      - 'KB5044284'
-      - 'KB5044030'
+    default_kb_list: ['KB4052623', 'KB2267602', 'KB5044284', 'KB5044030']
 
   tasks:
     - name: Normalize KB input
@@ -17,14 +13,17 @@
       ansible.windows.win_shell: |
         $kb = "{{ item | regex_replace('(?i)kb', '') }}"
         if (Get-HotFix -Id "KB$kb" -ErrorAction SilentlyContinue) {
-            Write-Host "MATCH_FOUND"
+            Write-Host "REMOVED: $kb"
             wusa.exe /uninstall /kb:$kb /quiet /norestart
         }
       loop: "{{ final_kb_list }}"
       register: uninstall_results
-      # This looks at the output of the current iteration only
-      changed_when: "'MATCH_FOUND' in stdout"
-      failed_when: false
+      # We remove 'changed_when' and 'failed_when' here to prevent the "undefined" error
+      # Ansible will mark these as 'changed' by default if they run.
+
+    - name: Check if any uninstalls actually took place
+      ansible.builtin.set_fact:
+        any_patches_removed: "{{ uninstall_results.results | selectattr('stdout', 'contains', 'REMOVED') | list | length > 0 }}"
 
     - name: Reset Update Cache and Reboot
       block:
@@ -35,7 +34,10 @@
           loop: [wuauserv, cryptsvc]
 
         - name: Clear Cache
-          ansible.windows.win_shell: Remove-Item -Path "C:\Windows\SoftwareDistribution" -Recurse -Force -ErrorAction SilentlyContinue
+          ansible.windows.win_shell: |
+            if (Test-Path "C:\Windows\SoftwareDistribution") {
+              Remove-Item -Path "C:\Windows\SoftwareDistribution" -Recurse -Force
+            }
           ignore_errors: yes
 
         - name: Start Services
@@ -48,9 +50,9 @@
           ansible.windows.win_reboot:
             msg: "Finalizing unpatching"
             reboot_timeout: 600
-      # Now that the loop is FINISHED, uninstall_results.changed is valid!
-      when: uninstall_results.changed
+      # Use our new boolean flag
+      when: any_patches_removed
 
     - name: Final Audit Note
       ansible.builtin.debug:
-        msg: "System unpatched and rebooted. Run audit to update Grafana."
+        msg: "System processing complete. If patches were found, the server has rebooted."
