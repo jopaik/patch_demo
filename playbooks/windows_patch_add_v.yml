@@ -1,0 +1,69 @@
+---
+- name: Uninstall Security and Defender KBs on Server 2022
+  hosts: joon-win2022
+  vars:
+    # 1. Combined list: Defender Updates + OS Cumulative Updates
+    default_kb_list: 
+      - 'KB4052623' # Defender Platform
+      - 'KB2267602' # Defender Definitions
+      - 'KB5044284' # October 2024 Cumulative Update (OS Level)
+      - 'KB5044030' # .NET Framework Cumulative Update
+
+    # 2. Logic to handle user input vs defaults
+    raw_kb_to_remove: "{{ input_kb_to_unpatch | default(default_kb_list) }}"
+
+    # 3. Normalization (Handle strings or lists)
+    kb_list: >-
+      {% if raw_kb_to_remove is string %}
+        {{ (raw_kb_to_remove | replace(',', ' ')).split() | map('trim') | list }}
+      {% else %}
+        {{ raw_kb_to_remove }}
+      {% endif %}
+
+  tasks:
+    - name: Uninstall KBs one by one
+      ansible.windows.win_shell: |
+        $kb = "{{ item | regex_replace('(?i)kb', '') }}"
+        if (Get-HotFix -Id "KB$kb" -ErrorAction SilentlyContinue) {
+            Write-Host "Found KB$kb. Uninstalling..."
+            # Use wusa to uninstall quietly
+            wusa.exe /uninstall /kb:$kb /quiet /norestart
+            $host.SetShouldExit(10) 
+        } else {
+            Write-Host "KB$kb not found."
+            $host.SetShouldExit(0)
+        }
+      loop: "{{ kb_list }}"
+      register: uninstall_results
+      failed_when: false 
+      changed_when: item.rc == 10
+
+    - name: Reset Update Cache (Required for Audit Detection)
+      block:
+        - name: Stop Update Services
+          ansible.windows.win_service:
+            name: "{{ item }}"
+            state: stopped
+          loop: [wuauserv, cryptsvc]
+
+        - name: Delete SoftwareDistribution Folder
+          ansible.windows.win_shell: |
+            Remove-Item -Path "C:\Windows\SoftwareDistribution" -Recurse -Force -ErrorAction SilentlyContinue
+          ignore_errors: yes
+
+        - name: Start Update Services
+          ansible.windows.win_service:
+            name: "{{ item }}"
+            state: started
+          loop: [wuauserv, cryptsvc]
+      when: uninstall_results.changed
+
+    - name: Reboot joon-win2022
+      ansible.windows.win_reboot:
+        msg: "Rebooting to finalize unpatching of {{ kb_list | length }} items."
+        reboot_timeout: 600 # Cumulative updates take longer to roll back
+      when: uninstall_results.changed
+
+    - name: Audit Status
+      ansible.builtin.debug:
+        msg: "System unpatched. Run your Audit Playbook now to update Grafana."
