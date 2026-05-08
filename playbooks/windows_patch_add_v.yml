@@ -2,7 +2,7 @@
 - name: Uninstall Security and Defender KBs on Server 2022
   hosts: joon-win2022
   vars:
-    # 1. Define the default list
+    # 1. Define the default list as a proper YAML list
     default_kb_list: 
       - 'KB4052623'
       - 'KB2267602'
@@ -10,20 +10,14 @@
       - 'KB5044030'
 
   tasks:
-    - name: Normalize KB input into a proper list object
+    - name: Normalize KB input using lazy fix
       ansible.builtin.set_fact:
-        # If input is a string (from a survey), split it. 
-        # If it's missing, use the default list.
-        final_kb_list: >-
-          {% if input_kb_to_unpatch is defined and input_kb_to_unpatch is string %}
-            {{ (input_kb_to_unpatch | replace(',', ' ')).split() }}
-          {% else %}
-            {{ input_kb_to_unpatch | default(default_kb_list) }}
-          {% endif %}
+        # If string (from survey/cli): split it. If not a string (list/undefined): use as is.
+        final_kb_list: "{{ (input_kb_to_unpatch | replace(',', ' ')).split() if input_kb_to_unpatch is defined and input_kb_to_unpatch is string else (input_kb_to_unpatch | default(default_kb_list)) }}"
 
-    - name: Debug - Verify data type is actually a list
+    - name: Verify data type
       ansible.builtin.debug:
-        msg: "Processing {{ final_kb_list | length }} items of type {{ final_kb_list | type_debug }}"
+        msg: "Type is {{ final_kb_list | type_debug }} for list: {{ final_kb_list }}"
 
     - name: Uninstall KBs one by one
       ansible.windows.win_shell: |
@@ -69,4 +63,4 @@
 
     - name: Audit Status
       ansible.builtin.debug:
-        msg: "System unpatched. Run your Audit Playbook."
+        msg: "System unpatched. Run your Audit Playbook"
