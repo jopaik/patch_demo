@@ -1,0 +1,58 @@
+---
+- name: Remediate CVE-2026-31431 (Copy Fail) on RHEL 8/9
+  hosts: jp_rhel
+  become: yes
+  vars:
+    # Set to true if you want to apply the grubby mitigation regardless of patch status
+    apply_mitigation: false
+
+  tasks:
+    - name: 1. Update Kernel to Patched Version
+      ansible.builtin.dnf:
+        name: kernel
+        state: latest
+      register: kernel_update
+
+    - name: 2. Apply Mitigation (initcall_blacklist) if requested or patch failed
+      block:
+        - name: Add algif_aead_init to boot arguments
+          ansible.builtin.command: >
+            grubby --update-kernel=ALL --args='initcall_blacklist=algif_aead_init'
+          changed_when: true
+          notify: Reboot Server
+
+        - name: On IBM Z (s390x) only, update zipl
+          ansible.builtin.command: zipl
+          when: ansible_architecture == "s390x"
+      when: apply_mitigation or kernel_update.failed
+
+    - name: 3. Check if reboot is required after update
+      ansible.builtin.command: needs-restarting -r
+      register: reboot_check
+      failed_when: false
+      changed_when: false
+
+    - name: 4. Reboot to apply changes
+      ansible.builtin.reboot:
+        msg: "Rebooting to apply CVE-2026-31431 (Copy Fail) kernel fix"
+        reboot_timeout: 600
+      when: kernel_update.changed or reboot_check.rc != 0
+
+    - name: 5. Verification - Check Running Kernel Version
+      ansible.builtin.command: uname -r
+      register: current_kernel
+
+    - name: 6. Verification - Check Mitigation Status
+      ansible.builtin.shell: "cat /proc/cmdline"
+      register: cmdline_check
+      changed_when: false
+
+    - name: Summary
+      ansible.builtin.debug:
+        msg: 
+          - "Running Kernel: {{ current_kernel.stdout }}"
+          - "Mitigation Active: {{ 'YES' if 'algif_aead_init' in cmdline_check.stdout else 'NO' }}"
+
+  handlers:
+    - name: Reboot Server
+      ansible.builtin.reboot:
