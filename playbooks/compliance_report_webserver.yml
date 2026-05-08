@@ -10,7 +10,7 @@
         # Update this list here to include the Cumulative Updates
         target_kb_ids: "{{ input_kb_ids | default(['KB4052623', 'KB2267602', 'KB5044284', 'KB5044030']) }}"
         cacheable: yes
-        
+
     - name: Get current time in EDT (Manual Offset)
       ansible.builtin.set_fact:
         ny_time: "{{ '%Y-%m-%d %H:%M:%S EDT' | strftime((ansible_date_time.epoch | int) - 14400) }}"
@@ -55,7 +55,7 @@
       block:
         - name: Discover ALL Missing Windows KBs
           ansible.windows.win_updates:
-            category_names: [SecurityUpdates, CriticalUpdates]
+            category_names: [SecurityUpdates, CriticalUpdates, Updates]
             state: searched
           register: win_all_check
 
