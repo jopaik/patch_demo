@@ -100,6 +100,16 @@
             name: httpd
             state: started
             enabled: yes
+            
+        - name: Allow HTTP and HTTPS through firewalld
+          ansible.posix.firewalld:
+            service: "{{ item }}"
+            permanent: yes
+            state: enabled
+            immediate: yes
+          loop:
+            - http
+            - https
 
         - name: Generate HTML Compliance Report
           ansible.builtin.copy:
