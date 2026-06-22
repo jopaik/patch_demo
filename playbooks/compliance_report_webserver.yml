@@ -79,9 +79,29 @@
             compliance_status: "{{ 'VULNERABLE' if (missing_targets | length > 0) else 'COMPLIANT' }}"
             cacheable: yes
 
-  # --- WEBSERVER CONFIGURATION ---
+ # --- WEBSERVER CONFIGURATION (RHEL) ---
     - name: Webserver Setup & Reporting
       block:
+        - name: Install Apache (httpd)
+          ansible.builtin.package:
+            name: httpd
+            state: present
+
+        - name: Ensure Web Root Directory Exists
+          ansible.builtin.file:
+            path: /var/www/html
+            state: directory
+            mode: '0755'
+            owner: root
+            group: root
+
+        - name: Start and Enable httpd Service
+          ansible.builtin.service:
+            name: httpd
+            state: started
+            enabled: yes
+
+         ghost-name: Generate HTML Compliance Report
         - name: Generate HTML Compliance Report
           ansible.builtin.copy:
             dest: "/var/www/html/index.html"
@@ -161,6 +181,7 @@
               </body>
               </html>
           notify: Force Restart Apache
+
       delegate_to: joon-webserver
       become: yes
       when: inventory_hostname == 'joon-webserver'
