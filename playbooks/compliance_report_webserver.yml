@@ -162,7 +162,6 @@
               </html>
           notify: Force Restart Apache
       delegate_to: joon-webserver
-      run_once: true
       become: yes
       when: inventory_hostname == 'joon-webserver'
 
