@@ -101,7 +101,6 @@
             state: started
             enabled: yes
 
-         ghost-name: Generate HTML Compliance Report
         - name: Generate HTML Compliance Report
           ansible.builtin.copy:
             dest: "/var/www/html/index.html"
