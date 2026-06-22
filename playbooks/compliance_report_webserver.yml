@@ -80,92 +80,94 @@
             cacheable: yes
 
     # --- WEBSERVER CONFIGURATION ---
-    - name: Webserver Setup & Reporting
-      delegate_to: joon-webserver
-      run_once: true
-      become: yes
-      block:
-        - name: Generate HTML Compliance Report
-          ansible.builtin.copy:
-            dest: "/var/www/html/index.html"
-            mode: '0644'
-            content: |
-              <!DOCTYPE html>
-              <html>
-              <head>
-                  <title>Security Audit Report</title>
-                  <style>
-                      body { font-family: 'Segoe UI', sans-serif; margin: 20px; background-color: #f8f9fa; }
-                      .container { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); width: 98%; margin: auto; }
-                      table { width: 100%; border-collapse: collapse; margin-top: 20px; table-layout: fixed; }
-                      th, td { padding: 12px; text-align: left; border-bottom: 1px solid #eee; vertical-align: top; word-wrap: break-word; }
-                      th { background-color: #212529; color: white; }
-                      .VULNERABLE { color: #dc3545; font-weight: bold; }
-                      .COMPLIANT { color: #198754; font-weight: bold; }
-                      .reboot-YES { color: #fd7e14; font-weight: bold; }
-                      .reboot-NO { color: #adb5bd; }
-                      .vuln-tag { display: inline-block; background: #e9ecef; color: #495057; padding: 2px 8px; border-radius: 4px; margin: 2px; font-size: 11px; font-family: 'Courier New', monospace; border: 1px solid #dee2e6; }
-                      .review-box { background-color: #e7f3ff; border: 1px solid #b3d7ff; padding: 15px; border-radius: 8px; margin-bottom: 20px; }
-                  </style>
-              </head>
-              <body>
-                  <div class="container">
-                      <h1>Infrastructure Security Dashboard</h1>
+    when: inventory_hostname == 'joon-webserver'
+    block:
+      - name: Webserver Setup & Reporting
+        delegate_to: joon-webserver
+        run_once: true
+        become: yes
+        block:
+          - name: Generate HTML Compliance Report
+            ansible.builtin.copy:
+              dest: "/var/www/html/index.html"
+              mode: '0644'
+              content: |
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <title>Security Audit Report</title>
+                    <style>
+                        body { font-family: 'Segoe UI', sans-serif; margin: 20px; background-color: #f8f9fa; }
+                        .container { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); width: 98%; margin: auto; }
+                        table { width: 100%; border-collapse: collapse; margin-top: 20px; table-layout: fixed; }
+                        th, td { padding: 12px; text-align: left; border-bottom: 1px solid #eee; vertical-align: top; word-wrap: break-word; }
+                        th { background-color: #212529; color: white; }
+                        .VULNERABLE { color: #dc3545; font-weight: bold; }
+                        .COMPLIANT { color: #198754; font-weight: bold; }
+                        .reboot-YES { color: #fd7e14; font-weight: bold; }
+                        .reboot-NO { color: #adb5bd; }
+                        .vuln-tag { display: inline-block; background: #e9ecef; color: #495057; padding: 2px 8px; border-radius: 4px; margin: 2px; font-size: 11px; font-family: 'Courier New', monospace; border: 1px solid #dee2e6; }
+                        .review-box { background-color: #e7f3ff; border: 1px solid #b3d7ff; padding: 15px; border-radius: 8px; margin-bottom: 20px; }
+                    </style>
+                </head>
+                <body>
+                    <div class="container">
+                        <h1>Infrastructure Security Dashboard</h1>
 
-                      <div class="review-box">
-                          <h3 style="margin-top: 0; color: #0056b3;">Audit Focus (Targets Under Review)</h3>
-                          <div style="display: flex; gap: 40px;">
-                              <div>
-                                  <strong>RHEL Advisories:</strong><br>
-                                  {% for cve in cve_advisory_ids %}
-                                      <span class="vuln-tag" style="background: #cfe2ff;">{{ cve }}</span>
-                                  {% endfor %}
-                              </div>
-                              <div>
-                                  <strong>Windows KBs:</strong><br>
-                                  {% for kb in target_kb_ids %}
-                                      <span class="vuln-tag" style="background: #cfe2ff;">{{ kb }}</span>
-                                  {% endfor %}
-                              </div>
-                          </div>
-                      </div>
+                        <div class="review-box">
+                            <h3 style="margin-top: 0; color: #0056b3;">Audit Focus (Targets Under Review)</h3>
+                            <div style="display: flex; gap: 40px;">
+                                <div>
+                                    <strong>RHEL Advisories:</strong><br>
+                                    {% for cve in cve_advisory_ids %}
+                                        <span class="vuln-tag" style="background: #cfe2ff;">{{ cve }}</span>
+                                    {% endfor %}
+                                </div>
+                                <div>
+                                    <strong>Windows KBs:</strong><br>
+                                    {% for kb in target_kb_ids %}
+                                        <span class="vuln-tag" style="background: #cfe2ff;">{{ kb }}</span>
+                                    {% endfor %}
+                                </div>
+                            </div>
+                        </div>
 
-                      <p><strong>Report Generated (NY Time):</strong> {{ ny_time }}</p>
-                      
-                      <table>
-                          <tr>
-                              <th style="width: 12%;">Host</th>
-                              <th style="width: 10%;">Status</th>
-                              <th style="width: 15%;">Missing Targeted</th>
-                              <th style="width: 10%;">Reboot Required</th>
-                              <th style="width: 53%;">Full System Vulnerabilities</th>
-                          </tr>
-                          {% for host in groups['all'] %}
-                            {% if hostvars[host].compliance_status is defined %}
+                        <p><strong>Report Generated (NY Time):</strong> {{ ny_time }}</p>
+                        
+                        <table>
                             <tr>
-                                <td>{{ host }}</td>
-                                <td><span class="{{ hostvars[host].compliance_status }}">{{ hostvars[host].compliance_status }}</span></td>
-                                <td>{{ hostvars[host].missing_targets | join(', ') if hostvars[host].missing_targets else 'None' }}</td>
-                                <td><span class="reboot-{{ hostvars[host].reboot_needed }}">{{ hostvars[host].reboot_needed }}</span></td>
-                                <td>
-                                    {% if hostvars[host].full_vulns %}
-                                        {% for vuln in hostvars[host].full_vulns %}
-                                            <span class="vuln-tag">{{ vuln }}</span>
-                                        {% endfor %}
-                                    {% else %}
-                                        <span style="color: #6c757d; font-style: italic;">No additional vulnerabilities</span>
-                                    {% endif %}
-                                </td>
+                                <th style="width: 12%;">Host</th>
+                                <th style="width: 10%;">Status</th>
+                                <th style="width: 15%;">Missing Targeted</th>
+                                <th style="width: 10%;">Reboot Required</th>
+                                <th style="width: 53%;">Full System Vulnerabilities</th>
                             </tr>
-                            {% endif %}
-                          {% endfor %}
-                      </table>
-                  </div>
-              </body>
-              </html>
-          notify: Force Restart Apache
+                            {% for host in groups['all'] %}
+                              {% if hostvars[host].compliance_status is defined %}
+                              <tr>
+                                  <td>{{ host }}</td>
+                                  <td><span class="{{ hostvars[host].compliance_status }}">{{ hostvars[host].compliance_status }}</span></td>
+                                  <td>{{ hostvars[host].missing_targets | join(', ') if hostvars[host].missing_targets else 'None' }}</td>
+                                  <td><span class="reboot-{{ hostvars[host].reboot_needed }}">{{ hostvars[host].reboot_needed }}</span></td>
+                                  <td>
+                                      {% if hostvars[host].full_vulns %}
+                                          {% for vuln in hostvars[host].full_vulns %}
+                                              <span class="vuln-tag">{{ vuln }}</span>
+                                          {% endfor %}
+                                      {% else %}
+                                          <span style="color: #6c757d; font-style: italic;">No additional vulnerabilities</span>
+                                      {% endif %}
+                                  </td>
+                              </tr>
+                              {% endif %}
+                            {% endfor %}
+                        </table>
+                    </div>
+                </body>
+                </html>
+            notify: Force Restart Apache
 
-  handlers:
-    - name: Force Restart Apache
-      delegate_to: joon-webserver
-      ansible.builtin.shell: "sudo systemctl restart httpd"
+    handlers:
+      - name: Force Restart Apache
+        delegate_to: joon-webserver
+        ansible.builtin.shell: "sudo systemctl restart httpd"

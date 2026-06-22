@@ -1,0 +1,69 @@
+---
+- name: Upgrade Cisco IOS Firmware
+  hosts: cisco_switches
+  gather_facts: no
+  vars:
+    # Define your target version and image details
+    compliant_version: "15.2(E9)"
+    ios_binary: "cat2960x-universalk9-mz.152-7.E9.bin"
+    ios_md5: "d41d8cd98f00b204e9800998ecf8427e" # Replace with actual MD5 checksum
+    ios_path: "/var/lib/tftpboot/" # Local path on your Ansible control node
+    
+  tasks:
+    - name: 1. Gather Current IOS Facts
+      cisco.ios.ios_facts:
+        gather_subset: min
+      register: device_facts
+
+    - name: 2. Check if Device is Already Compliant
+      ansible.builtin.meta: end_host
+      when: device_facts.ansible_facts.ansible_net_version == compliant_version
+      # This stops the play for this host if it's already on the target version
+
+    - name: 3. Verify Sufficient Flash Space (Optional but Recommended)
+      cisco.ios.ios_command:
+        commands: "show flash: | include bytes free"
+      register: flash_space
+
+    # Note: Ensure SCP or TFTP is enabled on the Cisco device
+    - name: 4. Copy IOS Image to Device Flash
+      cisco.ios.ios_copy:
+        local_file: "{{ ios_path }}{{ ios_binary }}"
+        remote_file: "flash:/{{ ios_binary }}"
+        protocol: scp  # You can change this to tftp or ftp
+      register: copy_status
+
+    - name: 5. Set the Boot Image to New Firmware
+      cisco.ios.ios_config:
+        lines:
+          - "boot system flash:/{{ ios_binary }}"
+        save_when: always
+
+    - name: 6. Reload the Cisco Device
+      cisco.ios.ios_command:
+        commands:
+          - command: "reload"
+            prompt: "Proceed with reload? [confirm]"
+            answer: "\r"
+      # We ignore errors because the connection will drop immediately on reload
+      ignore_errors: true 
+
+    - name: 7. Wait for Device to Come Back Online
+      ansible.builtin.wait_for:
+        host: "{{ ansible_host }}"
+        port: 22
+        delay: 60      # Don't even bother checking for the first 60 seconds
+        timeout: 600   # Give it up to 10 minutes to boot back up
+      delegate_to: localhost
+
+    - name: 8. Verify the Upgrade Was Successful
+      cisco.ios.ios_facts:
+        gather_subset: min
+      register: post_device_facts
+
+    - name: 9. Assert Version Compliance
+      ansible.builtin.assert:
+        that:
+          - post_device_facts.ansible_facts.ansible_net_version == compliant_version
+        fail_msg: "Upgrade failed! Device is running {{ post_device_facts.ansible_facts.ansible_net_version }}"
+        success_msg: "Successfully upgraded to {{ compliant_version }}"
