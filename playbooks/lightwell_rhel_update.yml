@@ -1,6 +1,6 @@
 ---
 - name: Remediate CVE using Red Hat Lightwell Network Repository
-  hosts: rhel_servers
+  hosts: jp_rhel
   become: true
   vars:
     # Non-disruptive target package (Safe for live SSH sessions)
