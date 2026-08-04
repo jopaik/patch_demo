@@ -1,0 +1,56 @@
+---
+- name: Remediate CVE using Red Hat Lightwell Network Repository
+  hosts: rhel_servers
+  become: true
+  vars:
+    # Non-disruptive target package (Safe for live SSH sessions)
+    cve_package_name: "libxml2"
+    
+    # Lightwell Repository Settings
+    lightwell_repo_id: "lightwell-remediated"
+    lightwell_repo_name: "Red Hat Lightwell Network - Remediated CVE Repo"
+    lightwell_baseurl: "https://repo.lightwell.redhat.com/rpm/rhel/9/$basearch/remediated/"
+    lightwell_gpgkey: "https://repo.lightwell.redhat.com/keys/RPM-GPG-KEY-lightwell"
+    
+    # Authentication token (Vault encrypted in production)
+    lightwell_token: "YOUR_LIGHTWELL_SERVICE_ACCOUNT_TOKEN"
+
+  tasks:
+    - name: Ensure Red Hat Lightwell GPG Key is imported
+      ansible.builtin.rpm_key:
+        state: present
+        key: "{{ lightwell_gpgkey }}"
+
+    - name: Configure Lightwell Remediated Repository
+      ansible.builtin.yum_repository:
+        name: "{{ lightwell_repo_id }}"
+        description: "{{ lightwell_repo_name }}"
+        baseurl: "{{ lightwell_baseurl }}"
+        gpgcheck: true
+        gpgkey: "{{ lightwell_gpgkey }}"
+        enabled: true
+        custom_http_headers:
+          - "Authorization: Bearer {{ lightwell_token }}"
+        state: present
+
+    - name: Clean and update DNF cache
+      ansible.builtin.dnf:
+        update_cache: true
+
+    - name: Update target package specifically from Lightwell Remediated Repo
+      ansible.builtin.dnf:
+        name: "{{ cve_package_name }}"
+        state: latest
+        enablerepo: "{{ lightwell_repo_id }}"
+        disablerepo: "*"
+      register: dnf_update_result
+
+    - name: Verify installed RPM release details
+      ansible.builtin.command:
+        cmd: "rpm -qi {{ cve_package_name }}"
+      register: rpm_info
+      changed_when: false
+
+    - name: Show installed package details
+      ansible.builtin.debug:
+        var: rpm_info.stdout_lines
