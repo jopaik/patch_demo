@@ -1,56 +1,49 @@
 ---
-- name: Remediate CVE using Red Hat Lightwell Network Repository
-  hosts: jp_rhel
+- name: Download, Install, and Verify Jinja2 Package
+  hosts: jp_lightwell_rhel
   become: true
+  connection: local
+  gather_facts: false
+
   vars:
-    # Non-disruptive target package (Safe for live SSH sessions)
-    cve_package_name: "libxml2"
-    
-    # Lightwell Repository Settings
-    lightwell_repo_id: "lightwell-remediated"
-    lightwell_repo_name: "Red Hat Lightwell Network - Remediated CVE Repo"
-    lightwell_baseurl: "https://repo.lightwell.redhat.com/rpm/rhel/9/$basearch/remediated/"
-    lightwell_gpgkey: "https://repo.lightwell.redhat.com/keys/RPM-GPG-KEY-lightwell"
-    
-    # Authentication token (Vault encrypted in production)
-    lightwell_token: "YOUR_LIGHTWELL_SERVICE_ACCOUNT_TOKEN"
+    package_url: "https://packages.redhat.com/api/pulp-content/public-lightwell-demo/python/validated/jinja2-3.1.6-0-py3-none-any.whl"
+    download_path: "/tmp/jinja2-3.1.6-0-py3-none-any.whl"
 
   tasks:
-    - name: Ensure Red Hat Lightwell GPG Key is imported
-      ansible.builtin.rpm_key:
+    - name: Download the Jinja2 wheel package
+      ansible.builtin.get_url:
+        url: "{{ package_url }}"
+        dest: "{{ download_path }}"
+        mode: '0644'
+
+    - name: Install Jinja2 from the downloaded wheel package
+      ansible.builtin.pip:
+        name: "{{ package_url }}"
         state: present
-        key: "{{ lightwell_gpgkey }}"
+        extra_args: "--force-reinstall --no-cache-dir"
 
-    - name: Configure Lightwell Remediated Repository
-      ansible.builtin.yum_repository:
-        name: "{{ lightwell_repo_id }}"
-        description: "{{ lightwell_repo_name }}"
-        baseurl: "{{ lightwell_baseurl }}"
-        gpgcheck: true
-        gpgkey: "{{ lightwell_gpgkey }}"
-        enabled: true
-        custom_http_headers:
-          - "Authorization: Bearer {{ lightwell_token }}"
-        state: present
+    - name: Locate the installed package metadata directory
+      ansible.builtin.find:
+        paths:
+          - "{{ ansible_env.HOME }}/.local/lib"
+          - "/usr/local/lib"
+          - "/usr/lib"
+        patterns: "jinja2-*.dist-info"
+        file_type: directory
+        recurse: true
+      register: found_dist_info
 
-    - name: Clean and update DNF cache
-      ansible.builtin.dnf:
-        update_cache: true
+    - name: Read PEP 610 direct_url.json metadata
+      ansible.builtin.slurp:
+        src: "{{ found_dist_info.files[0].path }}/direct_url.json"
+      register: direct_url_content
 
-    - name: Update target package specifically from Lightwell Remediated Repo
-      ansible.builtin.dnf:
-        name: "{{ cve_package_name }}"
-        state: latest
-        enablerepo: "{{ lightwell_repo_id }}"
-        disablerepo: "*"
-      register: dnf_update_result
-
-    - name: Verify installed RPM release details
-      ansible.builtin.command:
-        cmd: "rpm -qi {{ cve_package_name }}"
-      register: rpm_info
-      changed_when: false
-
-    - name: Show installed package details
+    - name: Parse and Display Download Source URL
+      vars:
+        origin_data: "{{ direct_url_content.content | b64decode | from_json }}"
       ansible.builtin.debug:
-        var: rpm_info.stdout_lines
+        msg:
+          - "================================================="
+          - "Package Name: jinja2"
+          - "Installed Source URL: {{ origin_data.url }}"
+          - "================================================="
