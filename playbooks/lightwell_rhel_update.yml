@@ -1,7 +1,6 @@
 ---
 - name: Download, Install, and Verify Jinja2 Package
   hosts: jp_lightwell_rhel
-  become: true
   connection: local
   gather_facts: false
 
