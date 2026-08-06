@@ -24,7 +24,6 @@
     - name: Locate the installed package metadata directory
       ansible.builtin.find:
         paths:
-          - "{{ ansible_env.HOME }}/.local/lib"
           - "/usr/local/lib"
           - "/usr/lib"
         patterns: "jinja2-*.dist-info"
