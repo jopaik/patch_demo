@@ -9,9 +9,7 @@
   tasks:
     - name: Ensure python3-pip is installed on RHEL host
       ansible.builtin.dnf:
-        name:
-          - python3-pip
-          - python3-wheel
+        name: python3-pip
         state: present
       become: true
 
