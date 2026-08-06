@@ -1,5 +1,5 @@
 ---
-- name: Download, Install, and Verify LightWell Jinja2 Package
+- name: Download, Install, and Verify Jinja2 Package
   hosts: jp_lightwell_rhel
   gather_facts: false
 
@@ -7,6 +7,14 @@
     package_url: "https://packages.redhat.com/api/pulp-content/public-lightwell-demo/python/validated/jinja2-3.1.6-0-py3-none-any.whl"
 
   tasks:
+    - name: Ensure python3-pip is installed on RHEL host
+      ansible.builtin.dnf:
+        name:
+          - python3-pip
+          - python3-wheel
+        state: present
+      become: true
+
     - name: Force install Jinja2 directly from remote URL
       ansible.builtin.pip:
         name: "{{ package_url }}"
