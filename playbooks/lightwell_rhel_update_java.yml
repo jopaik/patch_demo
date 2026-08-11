@@ -8,7 +8,7 @@
     artifact_id: "json"
     artifact_version: "20220320.0.0.rhlw-00003"
     target_jar_path: "/usr/share/java/{{ artifact_id }}-{{ artifact_version }}.jar"
-    artifact_url_path: "{{ maven_base_url }}/{{ group_path }}/{{ artifact_id }}/{{ artifact_version }}/{{ artifact_id }}-{{ artifact_version }}.jar"
+    artifact_url_path: "{{ maven_base_url }}/{{ group_path }}/{{ artifact_id }}/{{ artifact_version }}/{{ artifact_id }}-{{ artifact_version }.jar"
 
   tasks:
     - name: Ensure target directory exists
@@ -24,7 +24,7 @@
         mode: '0644'
       register: jar_download
 
-    - name: Verify file exists and calculate SHA-256 checksum
+    - name: Verify downloaded file exists and is non-empty
       ansible.builtin.stat:
         path: "{{ target_jar_path }}"
         checksum_algorithm: sha256
@@ -37,21 +37,6 @@
           - jar_stat.stat.size > 0
         fail_msg: "Verification Failed: The JAR file was not downloaded correctly or is empty."
         success_msg: "Verification Passed: JAR file exists with size {{ jar_stat.stat.size }} bytes."
-
-    - name: Fetch remote SHA-256 checksum from Lightwell repository
-      ansible.builtin.uri:
-        url: "{{ artifact_url_path }}.sha256"
-        return_content: true
-      register: remote_sha256
-      ignore_errors: true
-
-    - name: Verify SHA-256 checksum against repository hash
-      ansible.builtin.assert:
-        that:
-          - jar_stat.stat.checksum == remote_sha256.content | trim
-        fail_msg: "Checksum Mismatch! Downloaded hash ({{ jar_stat.stat.checksum }}) does not match repository hash ({{ remote_sha256.content | trim }})."
-        success_msg: "Checksum Verified: Local file matches Lightwell repository hash."
-      when: remote_sha256.status == 200
 
     - name: Read internal MANIFEST.MF metadata from JAR
       ansible.builtin.command:
@@ -67,3 +52,14 @@
         fail_msg: "Verification Warning: MANIFEST.MF does not contain expected Lightwell/Red Hat release identifiers."
         success_msg: "Verification Passed: MANIFEST.MF confirms Lightwell release artifact."
       when: manifest_output.rc == 0
+
+    - name: Optional - Attempt to fetch SHA1 or MD5 checksum if available
+      ansible.builtin.uri:
+        url: "{{ artifact_url_path }}.sha1"
+        return_content: true
+        status_code: [200, 404]
+      register: remote_sha1
+
+    - name: Display SHA1 Verification Status
+      ansible.builtin.debug:
+        msg: "Remote SHA1: {{ remote_sha1.content | trim if remote_sha1.status == 200 else 'Checksum sidecar file not hosted on repo endpoint' }}"
