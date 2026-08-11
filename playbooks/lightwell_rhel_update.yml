@@ -1,5 +1,5 @@
 ---
-- name: Download, Install, and Verify Jinja2 Package
+- name: Download, Install, and Verify Python Jinja2 Package
   hosts: jp_lightwell_rhel
   gather_facts: false
 
