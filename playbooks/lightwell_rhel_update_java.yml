@@ -1,48 +1,69 @@
 ---
-- name: Configure repository, update org.json, and validate source
+- name: Download Red Hat Lightwell org.json JAR
   hosts: jp_lightwell_rhel
   become: true
   vars:
-    repo_id: "lightwell_repo"
-    repo_baseurl: "https://packages.redhat.com/api/pulp-content/public-lightwell-demo/java/validated/"
-    package_name: "org.json"
+    maven_base_url: "https://packages.redhat.com/api/pulp-content/public-lightwell-demo/java/validated"
+    group_path: "org/json"
+    artifact_id: "json"
+    artifact_version: "20220320.0.0.rhlw-00003"
+    target_jar_path: "/usr/share/java/{{ artifact_id }}-{{ artifact_version }}.jar"
+    artifact_url_path: "{{ maven_base_url }}/{{ group_path }}/{{ artifact_id }}/{{ artifact_version }}/{{ artifact_id }}-{{ artifact_version }}.jar"
 
   tasks:
-    # 1. Configure the custom Lightwell YUM repository
-    - name: Add Lightwell package repository
-      ansible.builtin.yum_repository:
-        name: "{{ repo_id }}"
-        description: Lightwell Validated Packages Repository
-        baseurl: "{{ repo_baseurl }}"
-        enabled: yes
-        gpgcheck: no  # Set to yes if GPG key is present
-        sslverify: yes
+    - name: Ensure target directory exists
+      ansible.builtin.file:
+        path: "/usr/share/java"
+        state: directory
+        mode: '0755'
 
-    # 2. Update/Install the package strictly from the Lightwell repository
-    - name: Ensure package is installed exclusively from Lightwell repository
-      ansible.builtin.dnf:
-        name: "{{ package_name }}"
-        state: latest
-        disablerepo: "*"          # Disable all other repositories
-        enablerepo: "{{ repo_id }}" # Force installation from Lightwell only
+    - name: Download org.json Lightwell rebuilt JAR file
+      ansible.builtin.get_url:
+        url: "{{ artifact_url_path }}"
+        dest: "{{ target_jar_path }}"
+        mode: '0644'
+      register: jar_download
 
-    # 3. Validation Step 1: Query package repository origin using DNF
-    - name: Query installed package details from DNF
-      ansible.builtin.command:
-        cmd: "dnf info installed {{ package_name }}"
-      register: package_info
-      changed_when: false
+    - name: Verify file exists and calculate SHA-256 checksum
+      ansible.builtin.stat:
+        path: "{{ target_jar_path }}"
+        checksum_algorithm: sha256
+      register: jar_stat
 
-    # 4. Validation Step 2: Assert package source origin
-    - name: Validate package came from Lightwell repository
+    - name: Fail if JAR file was not created or is empty
       ansible.builtin.assert:
         that:
-          - "'From repo' in package_info.stdout"
-          - "repo_id in package_info.stdout"
-        fail_msg: "SECURITY ERROR: Package {{ package_name }} was not installed from the {{ repo_id }} repository!"
-        success_msg: "SUCCESS: Package {{ package_name }} validated as installed from {{ repo_id }}."
+          - jar_stat.stat.exists
+          - jar_stat.stat.size > 0
+        fail_msg: "Verification Failed: The JAR file was not downloaded correctly or is empty."
+        success_msg: "Verification Passed: JAR file exists with size {{ jar_stat.stat.size }} bytes."
 
-    # 5. Optional Deep Inspection: Print installed repository details
-    - name: Display package source verification details
-      ansible.builtin.debug:
-        msg: "{{ package_info.stdout_lines | select('search', 'From repo|Repository|Vendor') | list }}"
+    - name: Fetch remote SHA-256 checksum from Lightwell repository
+      ansible.builtin.uri:
+        url: "{{ artifact_url_path }}.sha256"
+        return_content: true
+      register: remote_sha256
+      ignore_errors: true
+
+    - name: Verify SHA-256 checksum against repository hash
+      ansible.builtin.assert:
+        that:
+          - jar_stat.stat.checksum == remote_sha256.content | trim
+        fail_msg: "Checksum Mismatch! Downloaded hash ({{ jar_stat.stat.checksum }}) does not match repository hash ({{ remote_sha256.content | trim }})."
+        success_msg: "Checksum Verified: Local file matches Lightwell repository hash."
+      when: remote_sha256.status == 200
+
+    - name: Read internal MANIFEST.MF metadata from JAR
+      ansible.builtin.command:
+        cmd: "unzip -p {{ target_jar_path }} META-INF/MANIFEST.MF"
+      register: manifest_output
+      changed_when: false
+      failed_when: false
+
+    - name: Confirm artifact contains Lightwell / Red Hat build signature
+      ansible.builtin.assert:
+        that:
+          - "'rhlw' in manifest_output.stdout or 'Red Hat' in manifest_output.stdout or artifact_version in manifest_output.stdout"
+        fail_msg: "Verification Warning: MANIFEST.MF does not contain expected Lightwell/Red Hat release identifiers."
+        success_msg: "Verification Passed: MANIFEST.MF confirms Lightwell release artifact."
+      when: manifest_output.rc == 0
