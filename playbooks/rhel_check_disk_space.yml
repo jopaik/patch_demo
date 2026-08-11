@@ -1,0 +1,43 @@
+---
+- name: Audit RHEL Server Disk Space
+  hosts: rhel_servers
+  gather_facts: true
+
+  vars:
+    # Set the warning threshold percentage
+    disk_threshold_percent: 80
+
+  tasks:
+    - name: Filter mount points exceeding usage threshold
+      ansible.builtin.set_fact:
+        high_disk_usage: "{{ ansible_facts.mounts | selectattr('size_total', 'defined') | selectattr('size_total', 'gt', 0) | map('combine', {'used_percent': (((item.size_total - item.size_available) / item.size_total) * 100) | round(1)}) | selectattr('used_percent', 'ge', disk_threshold_percent) | list }}"
+      loop: "{{ ansible_facts.mounts }}"
+      loop_control:
+        label: "{{ item.mount }}"
+      run_once: true
+
+    - name: Build disk usage summary for all mounts
+      ansible.builtin.set_fact:
+        disk_report: >-
+          {% set report = [] %}
+          {% for mount in ansible_facts.mounts if mount.size_total > 0 %}
+            {% set total_gb = (mount.size_total / 1073741824) | round(1) %}
+            {% set avail_gb = (mount.size_available / 1073741824) | round(1) %}
+            {% set used_percent = (((mount.size_total - mount.size_available) / mount.size_total) * 100) | round(1) %}
+            {% set _ = report.append({'mount': mount.mount, 'device': mount.device, 'size_gb': total_gb, 'avail_gb': avail_gb, 'used_percent': used_percent}) %}
+          {% endfor %}
+          {{ report }}
+
+    - name: Display complete disk report
+      ansible.builtin.debug:
+        msg:
+          host: "{{ inventory_hostname }}"
+          mounts: "{{ disk_report }}"
+
+    - name: Warn if any partition exceeds threshold
+      ansible.builtin.debug:
+        msg: "WARNING: Partition {{ item.mount }} on {{ inventory_hostname }} is at {{ item.used_percent }}% capacity!"
+      loop: "{{ disk_report }}"
+      when: item.used_percent >= disk_threshold_percent
+      loop_control:
+        label: "{{ item.mount }} ({{ item.used_percent }}%)"

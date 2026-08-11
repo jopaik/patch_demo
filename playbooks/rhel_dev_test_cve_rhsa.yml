@@ -1,0 +1,84 @@
+---
+- name: "DEMO & DEBUG ONLY: RHEL Security Advisory Check (RHSA-2026:8259 & CVE-2026-33412)"
+  hosts: jp_rhel_lab
+  gather_facts: false
+
+  vars:
+    # Target Security Identifiers for Demo
+    target_advisories:
+      - id: "RHSA-2026:8259"
+        severity: "Important"
+        summary: "Security update for RHEL system components"
+      - id: "CVE-2026-33412"
+        severity: "Critical"
+        summary: "Vulnerability in core system library"
+
+    # Mock Detection State for Demo Purposes
+    mock_dnf_cache_status: "Up to Date"
+    mock_scan_results:
+      - cve: "CVE-2026-33412"
+        advisory: "RHSA-2026:8259"
+        affected_package: "libsystem-core"
+        installed_version: "2.4.1-1.el9"
+        fixed_version: "2.4.1-2.el9_4"
+        status: "Vulnerable - Patch Pending"
+
+  tasks:
+    # -------------------------------------------------------------------------
+    # STEP 1: DEMO BANNER & ENVIRONMENT CONTEXT
+    # -------------------------------------------------------------------------
+    - name: "DEBUG: Display Playbook Execution Context"
+      ansible.builtin.debug:
+        msg:
+          - "=================================================================="
+          - "               *** DEMO / DEBUG MODE ONLY ***                     "
+          - "   No DNF/YUM package updates or system changes will occur.       "
+          - "=================================================================="
+          - "Target Host: {{ inventory_hostname }}"
+          - "Target Environment: Dev / Test Sandbox"
+
+    # -------------------------------------------------------------------------
+    # STEP 2: INSPECT ADVISORY METADATA
+    # -------------------------------------------------------------------------
+    - name: "DEBUG: Inspect Target Security Advisories"
+      ansible.builtin.debug:
+        msg:
+          advisory_id: "{{ item.id }}"
+          severity: "{{ item.severity }}"
+          details: "{{ item.summary }}"
+      loop: "{{ target_advisories }}"
+      loop_control:
+        label: "{{ item.id }}"
+
+    # -------------------------------------------------------------------------
+    # STEP 3: MOCK DNF ADVISORY & CVE SCAN REPORT
+    # -------------------------------------------------------------------------
+    - name: "DEBUG: Simulate DNF Security Audit Output"
+      ansible.builtin.debug:
+        msg:
+          dnf_cache: "{{ mock_dnf_cache_status }}"
+          advisories_evaluated: 2
+          vulnerabilities_detected: "{{ mock_scan_results | length }}"
+          scan_findings: "{{ mock_scan_results }}"
+
+    # -------------------------------------------------------------------------
+    # STEP 4: PREVIEW REMEDIATION PLAN
+    # -------------------------------------------------------------------------
+    - name: "DEBUG: Preview Patch Plan for RHSA-2026:8259 / CVE-2026-33412"
+      ansible.builtin.debug:
+        msg:
+          - "ACTION REQUIRED: Security advisory RHSA-2026:8259 applies to {{ inventory_hostname }}."
+          - "TARGET PACKAGE: {{ item.affected_package }}"
+          - "CURRENT VERSION: {{ item.installed_version }}"
+          - "REMEDIATION VERSION: {{ item.fixed_version }}"
+          - "EXECUTION SIMULATION: `dnf update-minimal --advisory=RHSA-2026:8259`"
+      loop: "{{ mock_scan_results }}"
+      loop_control:
+        label: "{{ item.cve }}"
+
+    # -------------------------------------------------------------------------
+    # STEP 5: FINAL SUMMARY
+    # -------------------------------------------------------------------------
+    - name: "DEBUG: Display Execution Summary"
+      ansible.builtin.debug:
+        msg: "Security audit demo completed for {{ inventory_hostname }}. Zero changes made to target system."

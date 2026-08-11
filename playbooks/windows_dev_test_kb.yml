@@ -1,0 +1,83 @@
+---
+- name: "Test in Development Only:  Windows KB Inspection (KB4055223 & KB2267602)"
+  hosts: jp_windows_lab
+  gather_facts: false
+
+  vars:
+    # Target KBs for demo
+    demo_kbs:
+      - id: "KB4055223"
+        type: ".NET Framework Security Update"
+      - id: "KB2267602"
+        type: "Microsoft Defender Security Intelligence Update"
+
+    # Simulated detection state for demonstration
+    mock_wsus_server: "wsus-demo.internal.local"
+    mock_found_kbs:
+      - kb: "2267602"
+        title: "Security Intelligence Update for Microsoft Defender Antivirus - KB2267602"
+        size_mb: 64.2
+        status: "Pending Installation"
+
+  tasks:
+    # -------------------------------------------------------------------------
+    # STEP 1: DEMO BANNER & ENVIRONMENT CONTEXT
+    # -------------------------------------------------------------------------
+    - name: "DEBUG: Display Playbook Execution Context"
+      ansible.builtin.debug:
+        msg:
+          - "=================================================================="
+          - "               *** DEMO / DEBUG MODE ONLY ***                     "
+          - "  No actual server changes or update installations will occur.    "
+          - "=================================================================="
+          - "Target Host: {{ inventory_hostname }}"
+          - "Target WSUS Endpoint: {{ mock_wsus_server }}"
+
+    # -------------------------------------------------------------------------
+    # STEP 2: SIMULATED KB STATUS INSPECTION
+    # -------------------------------------------------------------------------
+    - name: "DEBUG: Inspect Target KB Metadata"
+      ansible.builtin.debug:
+        msg:
+          kb_identifier: "{{ item.id }}"
+          description: "{{ item.type }}"
+          target_environment: "Non-Production / Sandbox"
+      loop: "{{ demo_kbs }}"
+      loop_control:
+        label: "{{ item.id }}"
+
+    # -------------------------------------------------------------------------
+    # STEP 3: MOCK WSUS SEARCH & DETECTION REPORT
+    # -------------------------------------------------------------------------
+    - name: "DEBUG: Simulate Windows Update / WSUS Scan Results"
+      ansible.builtin.debug:
+        msg:
+          scan_status: "Complete (Simulated)"
+          total_detected: 1
+          detected_updates: "{{ mock_wsus_server }}"
+          patch_details: "{{ mock_found_kbs }}"
+
+    # -------------------------------------------------------------------------
+    # STEP 4: CONDITIONAL LOGIC & REMEDIATION PREVIEW
+    # -------------------------------------------------------------------------
+    - name: "DEBUG: Preview Remediation Plan for KB2267602"
+      ansible.builtin.debug:
+        msg:
+          - "ACTION REQUIRED: KB2267602 is required."
+          - "STAGING: Package staged for silent installation."
+          - "REBOOT REQUIRED: False"
+      when: "'2267602' in (mock_found_kbs | map(attribute='kb') | list)"
+
+    - name: "DEBUG: Preview Superseded Status for KB4055223"
+      ansible.builtin.debug:
+        msg:
+          - "STATUS: KB4055223 not detected."
+          - "REASON: Update is superseded by newer Cumulative Update baseline on host."
+      when: "'4055223' not in (mock_found_kbs | map(attribute='kb') | list)"
+
+    # -------------------------------------------------------------------------
+    # STEP 5: FINAL SUMMARY
+    # -------------------------------------------------------------------------
+    - name: "DEBUG: Display Execution Summary"
+      ansible.builtin.debug:
+        msg: "Demo completed successfully for {{ inventory_hostname }}. Zero changes made to target system."

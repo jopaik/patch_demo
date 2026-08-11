@@ -1,0 +1,38 @@
+---
+- name: Audit Windows Disk Space
+  hosts: jp_windows
+  gather_facts: false
+
+  vars:
+    # Flag drives with less than this percentage of free space
+    min_free_percent_threshold: 20
+
+  tasks:
+    - name: Query fixed drives and free space via PowerShell
+      ansible.windows.win_powershell:
+        script: |
+          Get-CimInstance -ClassName Win32_LogicalDisk -Filter "DriveType = 3" | Select-Object DeviceID, VolumeName,
+            @{Name="SizeGB"; Expression={[math]::Round($_.Size / 1GB, 2)}},
+            @{Name="FreeGB"; Expression={[math]::Round($_.FreeSpace / 1GB, 2)}},
+            @{Name="PercentFree"; Expression={[math]::Round(($_.FreeSpace / $_.Size) * 100, 1)}},
+            @{Name="PercentUsed"; Expression={[math]::Round(((($_.Size - $_.FreeSpace) / $_.Size) * 100), 1)}} |
+            ConvertTo-Json
+      register: disk_info
+
+    - name: Parse drive details
+      ansible.builtin.set_fact:
+        drives_list: "{{ disk_info.output[0] | from_json }}"
+
+    - name: Display complete drive usage report
+      ansible.builtin.debug:
+        msg:
+          host: "{{ inventory_hostname }}"
+          drives: "{{ drives_list }}"
+
+    - name: Warn if any drive drops below free space threshold
+      ansible.builtin.debug:
+        msg: "WARNING: Drive {{ item.DeviceID }} on {{ inventory_hostname }} has only {{ item.PercentFree }}% free space ({{ item.FreeGB }} GB available out of {{ item.SizeGB }} GB)!"
+      loop: "{{ [drives_list] if drives_list is mapping else drives_list }}"
+      when: item.PercentFree < min_free_percent_threshold
+      loop_control:
+        label: "{{ item.DeviceID }} ({{ item.PercentFree }}% Free)"
