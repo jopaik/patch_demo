@@ -1,60 +1,84 @@
 ---
-- name: Download Red Hat Lightwell org.json JAR
-  hosts: jp_lightwell_rhel
+- name: Download and Install Java Package via Maven from Red Hat Lightwell Repo
+  hosts: rhel_servers
   become: true
   vars:
-    maven_base_url: "https://packages.redhat.com/api/pulp-content/public-lightwell-demo/java/validated"
-    group_path: "org/json"
+    # Target package details
+    group_id: "org.json"
     artifact_id: "json"
     artifact_version: "20220320.0.0.rhlw-00003"
-    target_jar_path: "/usr/share/java/{{ artifact_id }}-{{ artifact_version }}.jar"
-    # FIXED TYPO HERE (added missing closing brace):
-    artifact_url_path: "{{ maven_base_url }}/{{ group_path }}/{{ artifact_id }}/{{ artifact_version }}/{{ artifact_id }}-{{ artifact_version }}.jar"
+    
+    # Lightwell Maven Repository details
+    repo_id: "lightwell-validated-java"
+    repo_url: "https://packages.redhat.com/api/pulp-content/public-lightwell-demo/java/validated/"
 
   tasks:
-    - name: Ensure unzip package is installed for verification
-      ansible.builtin.dnf:
-        name: unzip
-        state: present
-
-    - name: Ensure target directory exists
+    - name: Ensure invalid YUM/DNF Lightwell repo file is removed (if previously added)
       ansible.builtin.file:
-        path: "/usr/share/java"
+        path: "/etc/yum.repos.d/lightwell_repo.repo"
+        state: absent
+
+    - name: Install Maven on RHEL
+      ansible.builtin.dnf:
+        name: maven
+        state: present
+        disablerepo: "lightwell_repo"  # Prevents DNF from attempting to treat the Maven URL as an RPM repo
+      ignore_errors: true
+
+    - name: Ensure Maven configuration directory exists
+      ansible.builtin.file:
+        path: "/root/.m2"
         state: directory
         mode: '0755'
 
-    - name: Download org.json Lightwell rebuilt JAR file
-      ansible.builtin.get_url:
-        url: "{{ artifact_url_path }}"
-        dest: "{{ target_jar_path }}"
+    - name: Configure Maven settings.xml with Lightwell repository profile
+      ansible.builtin.copy:
+        dest: "/root/.m2/settings.xml"
         mode: '0644'
-      register: jar_download
+        content: |
+          <settings xmlns="http://maven.apache.org/SETTINGS/1.0.0"
+                    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                    xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.0.0 https://maven.apache.org/xsd/settings-1.0.0.xsd">
+            <profiles>
+              <profile>
+                <id>lightwell-repo-profile</id>
+                <repositories>
+                  <repository>
+                    <id>{{ repo_id }}</id>
+                    <name>Lightwell Validated Java Repo</name>
+                    <url>{{ repo_url }}</url>
+                    <releases>
+                      <enabled>true</enabled>
+                    </releases>
+                    <snapshots>
+                      <enabled>false</enabled>
+                    </snapshots>
+                  </repository>
+                </repositories>
+              </profile>
+            </profiles>
+            <activeProfiles>
+              <activeProfile>lightwell-repo-profile</activeProfile>
+            </activeProfiles>
+          </settings>
 
-    - name: Verify downloaded file exists and is non-empty
+    - name: Download and install artifact into local Maven repository using CLI
+      ansible.builtin.command: >
+        mvn dependency:get
+        -DremoteRepositories={{ repo_id }}::default::{{ repo_url }}
+        -Dartifact={{ group_id }}:{{ artifact_id }}:{{ artifact_version }}
+      register: mvn_output
+      changed_when: "'Downloading' in mvn_output.stdout or 'Downloaded' in mvn_output.stdout"
+
+    - name: Verify downloaded JAR exists in local Maven cache
       ansible.builtin.stat:
-        path: "{{ target_jar_path }}"
-        checksum_algorithm: sha256
-      register: jar_stat
+        path: "/root/.m2/repository/{{ group_id | replace('.', '/') }}/{{ artifact_id }}/{{ artifact_version }}/{{ artifact_id }}-{{ artifact_version }}.jar"
+      register: jar_cache_stat
 
-    - name: Fail if JAR file was not created or is empty
+    - name: Confirm successful Maven installation
       ansible.builtin.assert:
         that:
-          - jar_stat.stat.exists
-          - jar_stat.stat.size > 0
-        fail_msg: "Verification Failed: The JAR file was not downloaded correctly or is empty."
-        success_msg: "Verification Passed: JAR file exists with size {{ jar_stat.stat.size }} bytes."
-
-    - name: Read internal MANIFEST.MF metadata from JAR
-      ansible.builtin.command:
-        cmd: "unzip -p {{ target_jar_path }} META-INF/MANIFEST.MF"
-      register: manifest_output
-      changed_when: false
-      failed_when: false
-
-    - name: Confirm artifact contains Lightwell / Red Hat build signature
-      ansible.builtin.assert:
-        that:
-          - "'rhlw' in manifest_output.stdout or 'Red Hat' in manifest_output.stdout or artifact_version in manifest_output.stdout"
-        fail_msg: "Verification Warning: MANIFEST.MF does not contain expected Lightwell/Red Hat release identifiers."
-        success_msg: "Verification Passed: MANIFEST.MF confirms Lightwell release artifact."
-      when: manifest_output.rc == 0
+          - jar_cache_stat.stat.exists
+          - jar_cache_stat.stat.size > 0
+        fail_msg: "Verification Failed: Artifact was not installed into local Maven cache."
+        success_msg: "Successfully downloaded and installed {{ group_id }}:{{ artifact_id }}:{{ artifact_version }} via Maven from Lightwell Repo!"
