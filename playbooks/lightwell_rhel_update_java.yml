@@ -8,9 +8,15 @@
     artifact_id: "json"
     artifact_version: "20220320.0.0.rhlw-00003"
     target_jar_path: "/usr/share/java/{{ artifact_id }}-{{ artifact_version }}.jar"
-    artifact_url_path: "{{ maven_base_url }}/{{ group_path }}/{{ artifact_id }}/{{ artifact_version }}/{{ artifact_id }}-{{ artifact_version }.jar"
+    # FIXED TYPO HERE (added missing closing brace):
+    artifact_url_path: "{{ maven_base_url }}/{{ group_path }}/{{ artifact_id }}/{{ artifact_version }}/{{ artifact_id }}-{{ artifact_version }}.jar"
 
   tasks:
+    - name: Ensure unzip package is installed for verification
+      ansible.builtin.dnf:
+        name: unzip
+        state: present
+
     - name: Ensure target directory exists
       ansible.builtin.file:
         path: "/usr/share/java"
@@ -52,14 +58,3 @@
         fail_msg: "Verification Warning: MANIFEST.MF does not contain expected Lightwell/Red Hat release identifiers."
         success_msg: "Verification Passed: MANIFEST.MF confirms Lightwell release artifact."
       when: manifest_output.rc == 0
-
-    - name: Optional - Attempt to fetch SHA1 or MD5 checksum if available
-      ansible.builtin.uri:
-        url: "{{ artifact_url_path }}.sha1"
-        return_content: true
-        status_code: [200, 404]
-      register: remote_sha1
-
-    - name: Display SHA1 Verification Status
-      ansible.builtin.debug:
-        msg: "Remote SHA1: {{ remote_sha1.content | trim if remote_sha1.status == 200 else 'Checksum sidecar file not hosted on repo endpoint' }}"
