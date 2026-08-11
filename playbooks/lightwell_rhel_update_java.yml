@@ -1,0 +1,48 @@
+---
+- name: Configure repository, update org.json, and validate source
+  hosts: jp_lightwell_rhel
+  become: true
+  vars:
+    repo_id: "lightwell_repo"
+    repo_baseurl: "https://packages.redhat.com/api/pulp-content/public-lightwell-demo/java/validated/"
+    package_name: "org.json"
+
+  tasks:
+    # 1. Configure the custom Lightwell YUM repository
+    - name: Add Lightwell package repository
+      ansible.builtin.yum_repository:
+        name: "{{ repo_id }}"
+        description: Lightwell Validated Packages Repository
+        baseurl: "{{ repo_baseurl }}"
+        enabled: yes
+        gpgcheck: no  # Set to yes if GPG key is present
+        sslverify: yes
+
+    # 2. Update/Install the package strictly from the Lightwell repository
+    - name: Ensure package is installed exclusively from Lightwell repository
+      ansible.builtin.dnf:
+        name: "{{ package_name }}"
+        state: latest
+        disablerepo: "*"          # Disable all other repositories
+        enablerepo: "{{ repo_id }}" # Force installation from Lightwell only
+
+    # 3. Validation Step 1: Query package repository origin using DNF
+    - name: Query installed package details from DNF
+      ansible.builtin.command:
+        cmd: "dnf info installed {{ package_name }}"
+      register: package_info
+      changed_when: false
+
+    # 4. Validation Step 2: Assert package source origin
+    - name: Validate package came from Lightwell repository
+      ansible.builtin.assert:
+        that:
+          - "'From repo' in package_info.stdout"
+          - "repo_id in package_info.stdout"
+        fail_msg: "SECURITY ERROR: Package {{ package_name }} was not installed from the {{ repo_id }} repository!"
+        success_msg: "SUCCESS: Package {{ package_name }} validated as installed from {{ repo_id }}."
+
+    # 5. Optional Deep Inspection: Print installed repository details
+    - name: Display package source verification details
+      ansible.builtin.debug:
+        msg: "{{ package_info.stdout_lines | select('search', 'From repo|Repository|Vendor') | list }}"
