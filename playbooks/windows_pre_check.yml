@@ -16,7 +16,7 @@
     - name: Check Targeted KBs against Installation and Applicability
       ansible.windows.win_shell: |
         $targetId = "{{ item }}".ToUpper().Replace("KB", "")
-        $allMissing = @({{ win_all_check.updates | map(attribute='kb') | flatten | map('regex_replace', '^', "'") | map('regex_replace', '$', "'") | join(',') }})
+        $allMissing = @({{ (win_all_check.updates.values() | selectattr('kb', 'defined') | map(attribute='kb') | map('regex_replace', '^', "'") | map('regex_replace', '$', "'") | join(',')) or "''" }})
         
         $installed = Get-HotFix | Where-Object { $_.HotFixID -match $targetId }
         $isNeeded = $allMissing -contains $targetId
