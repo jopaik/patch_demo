@@ -21,7 +21,67 @@ Rulebook will launch Patch_Workflow within 5secs of actions
 Time of 5 secs will be used here as the event trigger
 
 ### Patch_Workflow Diagram
+# Automated Patch Verification & Remediation Workflow
 
+This document illustrates the execution lifecycle across both Windows and RHEL/Java targets for pre-checks, remediation, post-verification, and reporting.
+
+---
+
+## High-Level Lifecycle Flowchart
+
+```mermaid
+flowchart TD
+    Start([Operator / CI-CD Trigger]) --> TargetSplit{Target OS}
+
+    %% Windows Branch
+    TargetSplit -->|Windows Server| WinPre[Windows Pre-Check]
+    WinPre --> WinDisk[Check Disk Capacity]
+    WinDisk --> WinScan[Query WUA / WSUS & Get-HotFix]
+    WinScan --> WinCheckNeeded{Patching Needed?}
+    WinCheckNeeded -->|No| WinNoNeed([System Up-to-Date: Exit 0])
+    WinCheckNeeded -->|Yes| WinPatch[Apply Targeted KBs via win_updates]
+    WinPatch --> WinReboot{Reboot Required?}
+    WinReboot -->|Yes| WinRebootTask[Execute win_reboot]
+    WinReboot -->|No| WinPost[Windows Post-Check]
+    WinRebootTask --> WinPost
+    WinPost --> WinPostScan[Rescan WUA & Get-HotFix]
+    WinPostScan --> WinVerify{Resolved or Superseded?}
+    WinVerify -->|Yes| WinPass[Status: Patches resolved]
+    WinVerify -->|No| WinFail[Status: Patches unresolved / Alert]
+
+    %% RHEL / Java Branch
+    TargetSplit -->|RHEL / Java| RhelPre[RHEL Pre-Check]
+    RhelPre --> RhelDisk[Audit Mounts & Disk Free Space]
+    RhelDisk --> RhelScan[Audit DNF Advisories / CVE Status]
+    RhelScan --> RhelCheckNeeded{Remediation Needed?}
+    RhelCheckNeeded -->|No| RhelNoNeed([System Up-to-Date: Exit 0])
+    RhelCheckNeeded -->|Yes| RemediationType{Type?}
+    
+    RemediationType -->|OS Advisory| DnfUpdate[dnf update-minimal --advisory]
+    RemediationType -->|Java / Lightwell| MvnGet[Download JAR via mvn dependency:get]
+    
+    MvnGet --> JarLink[Deploy JAR & Update Symlink]
+    JarLink --> RestartApp[Restart Java Systemd Service]
+    DnfUpdate --> RhelPost[RHEL Post-Check]
+    RestartApp --> RhelPost
+
+    RhelPost --> RhelVerify[Verify RPM Version & JAR MANIFEST.MF]
+    RhelVerify --> RhelFinalCheck{Advisories Fixed?}
+    RhelFinalCheck -->|Yes| RhelPass[Status: Patches resolved]
+    RhelFinalCheck -->|No| RhelFail[Status: Patches unresolved / Alert]
+
+    %% Summary
+    WinPass --> FinalReport([Final Consolidated Report])
+    WinFail --> FinalReport
+    RhelPass --> FinalReport
+    RhelFail --> FinalReport
+```
+
+---
+
+## Detailed ASCII Architecture Diagram
+
+```text
 ====================================================================================================
                         AUTOMATED PATCH VERIFICATION & REMEDIATION WORKFLOW
 ====================================================================================================
@@ -87,7 +147,7 @@ Time of 5 secs will be used here as the event trigger
                                     FINAL STATUS REPORT
                        "Patches resolved"  OR  "Patches unresolved"
      ==================================================================================
-
+```
 ## Workflow Visualization
 # Automated Patch Verification & Remediation Demo
 
